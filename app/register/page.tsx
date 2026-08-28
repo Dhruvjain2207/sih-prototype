@@ -8,6 +8,13 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  // Form State
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Slideshow Data
   const slides = [
     {
@@ -48,6 +55,42 @@ export default function Register() {
     setShowPassword(!showPassword);
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setStatusMessage(null);
+
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: username,
+          email,
+          password: password || undefined, // Password is optional
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setStatusMessage({
+          type: 'success',
+          text: `User ${data.user.email} successfully created in MongoDB! ${data.user.hasPassword ? '(Password hashed)' : '(Password omitted)'}`,
+        });
+        setUsername('');
+        setEmail('');
+        setPassword('');
+      } else {
+        setStatusMessage({ type: 'error', text: data.error || 'Registration failed' });
+      }
+    } catch {
+      setStatusMessage({ type: 'error', text: 'Network error connecting to MongoDB API' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       {/* Main Split Layout */}
@@ -61,37 +104,66 @@ export default function Register() {
               <p>Join EasyService and start booking top-tier home services.</p>
             </div>
 
-            <form>
+            {statusMessage && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '6px',
+                  marginBottom: '16px',
+                  fontSize: '14px',
+                  backgroundColor: statusMessage.type === 'success' ? '#d1fae5' : '#fee2e2',
+                  color: statusMessage.type === 'success' ? '#065f46' : '#991b1b',
+                  border: `1px solid ${statusMessage.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+                }}
+              >
+                {statusMessage.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
               <div className="input-group">
-                <label>Username</label>
+                <label>Name / Username</label>
                 <div className="input-wrapper">
-                  <input type="text" placeholder="e.g. johndoe123" required />
+                  <input
+                    type="text"
+                    placeholder="e.g. johndoe123"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                  />
                 </div>
               </div>
 
               <div className="input-group">
                 <label>Email</label>
                 <div className="input-wrapper">
-                  <input type="email" placeholder="you@example.com" required />
+                  <input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
                 </div>
               </div>
 
               <div className="input-group">
-                <label>Password</label>
+                <label>Password <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}>(Optional)</span></label>
                 <div className="input-wrapper">
                   <input 
                     type={showPassword ? "text" : "password"} 
-                    placeholder="Enter your password" 
-                    required 
+                    placeholder="Enter password (optional)" 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                   />
-                  <button onClick={togglePassword} className="show-password">
+                  <button type="button" onClick={togglePassword} className="show-password">
                     {showPassword ? 'Hide' : 'Show'}
                   </button>
                 </div>
               </div>
 
-              <button type="submit" className="btn-submit">
-                Create Account
+              <button type="submit" className="btn-submit" disabled={loading}>
+                {loading ? 'Saving to Database...' : 'Create Account'}
               </button>
 
               <div className="divider">OR</div>
