@@ -1,395 +1,178 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+"use client";
 
-/* Global & Reset */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Inter', sans-serif;
-}
+import React, { useState, useEffect } from 'react';
+import './register.css'; // Link to the CSS file above
 
-body {
-    background-color: #0a0a0a;
-    color: #ffffff;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
+export default function Register() {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
-/* Main Layout - Asymmetric Split */
-.main-container {
-    flex: 1;
-    display: flex;
-    max-width: 1500px;
-    margin: 0;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-}
-
-/* Left Panel - Narrower */
-.left-panel {
-    flex: 0.6; /* Takes ~30% of the space */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem 4rem;
-    opacity: 0; 
-    transform: translateX(-50px);
-    height: 100vh; 
-}
-
-/* Right Panel - Wider */
-.right-panel {
-    flex: 1.4; /* Takes ~70% of the space */
-    position: relative;
-    padding: 2rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    opacity: 0; 
-    height: 100vh;
-    background-color: #4c36d6;
-}
-
-/* Entry Animations */
-.left-panel.loaded {
-    animation: popUpFromLeft 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.right-panel.loaded {
-    animation: fadeInSlide 1.2s ease-out forwards;
-    animation-delay: 0.3s;
-}
-
-@keyframes popUpFromLeft {
-    0% { opacity: 0; transform: translateX(-80px) scale(0.95); }
-    100% { opacity: 1; transform: translateX(0) scale(1); }
-}
-
-@keyframes fadeInSlide {
-    0% { opacity: 0; }
-    100% { opacity: 1; }
-}
-
-/* Form Container (No outer box) */
-.form-container {
-    width: 100%;
-    max-width: 380px; /* Constrain form width for a clean look */
-    display: flex;
-    flex-direction: column;
-}
-
-.form-app-icon {
-    width: 54px;
-    height: 54px;
-    background-color: #141414;
-    border: 1px solid #333;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 1.5rem auto;
-    font-size: 1.5rem;
-    color: #fff;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-
-.form-header {
-    text-align: center;
-    margin-bottom: 2rem;
-}
-
-.form-header h1 {
-    font-size: 1.75rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-}
-
-.form-header p {
-    color: #888;
-    font-size: 0.9rem;
-    line-height: 1.4;
-}
-
-/* Social Buttons */
-.social-buttons-container {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-}
-
-.btn-social {
-    width: 100%;
-    background-color: #141414; /* Darker fill */
-    color: #fff;
-    border: 1px solid #333;
-    padding: 0.85rem;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-}
-
-.btn-social:hover {
-    background-color: #1a1a1a;
-    border-color: #444;
-}
-
-.divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    margin: 1.5rem 0;
-    color: #555;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.divider::before, .divider::after {
-    content: '';
-    flex: 1;
-    border-bottom: 1px solid #333;
-}
-
-.divider:not(:empty)::before { margin-right: 1rem; }
-.divider:not(:empty)::after { margin-left: 1rem; }
-
-/* Standard Inputs */
-.input-group {
-    margin-bottom: 1.2rem;
-}
-
-.input-group label {
-    display: block;
-    font-size: 0.85rem;
-    color: #bbb;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-}
-
-.input-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.input-wrapper input {
-    width: 100%;
-    background-color: #050505;
-    border: 1px solid #333;
-    color: #fff;
-    padding: 0.9rem 1rem;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    outline: none;
-    transition: border-color 0.2s;
-}
-
-.input-wrapper input:focus {
-    border-color: #5e43f3;
-}
-
-.input-wrapper input::placeholder {
-    color: #555;
-}
-
-.show-password {
-    position: absolute;
-    right: 1rem;
-    background: none;
-    border: none;
-    color: #5e43f3;
-    font-weight: 600;
-    font-size: 0.85rem;
-    cursor: pointer;
-}
-
-.btn-submit {
-    width: 100%;
-    background-color: #5e43f3;
-    color: white;
-    border: none;
-    padding: 1rem;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    margin-top: 0.5rem;
-    transition: background-color 0.2s;
-}
-
-.btn-submit:hover {
-    background-color: #4c36d6;
-}
-
-.login-link {
-    text-align: center;
-    margin-top: 1.5rem;
-    font-size: 0.85rem;
-    color: #888;
-}
-
-.login-link a {
-    color: #5e43f3;
-    text-decoration: none;
-    font-weight: 600;
-}
-
-.btn-google{
-    width: 100%;
-    border: none;
-    padding: 1rem;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    margin-top: 0.5rem;
-    transition: background-color 0.2s;
-}
-
-/* Remove padding from the parent container and add the purple background */
-.right-panel {
-    flex: 1.2; 
-    position: relative;
-    padding: 0; /* Padding removed */
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    opacity: 0; 
-    background-color: #5142d7; /* Matches the solid background in your reference image */
-}
-
-/* Ensure the slideshow container takes up the full space */
-.slideshow-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-
-/* The rest of your slide CSS remains the same */
-.slide {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 1s ease-in-out, visibility 1s;
-}
-
-.slide.active {
-    opacity: 1;
-    visibility: visible;
-    z-index: 10;
-}
-
-.slide-image-box {
-    flex: 2;
-    width: 100%;
-    background-size: cover;
-    background-position: center;
-    position: relative;
-    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
-}
-
-.slide-text-box {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    padding-top: 1rem;
-    text-align: center;
-}
-
-.slide-text-box h2 {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 0.75rem;
-    color: #fff;
-}
-
-.slide-text-box p {
-    font-size: 1.05rem;
-    color: #e0e0e0;
-    line-height: 1.6;
-    max-width: 80%;
-    margin: 0 auto;
-}
-
-/* Footer */
-.site-footer {
-    background-color: #050505;
-    border-top: 1px solid #222;
-    padding: 3rem 5% 2rem;
-    margin-top: auto;
-}
-
-.footer-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 2rem;
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-.footer-section h3 {
-    font-size: 1.1rem;
-    color: #fff;
-    margin-bottom: 1rem;
-}
-
-.footer-section ul {
-    list-style: none;
-}
-
-.footer-section ul li {
-    margin-bottom: 0.5rem;
-}
-
-.footer-section a {
-    color: #888;
-    text-decoration: none;
-    font-size: 0.9rem;
-    transition: color 0.2s;
-}
-
-.footer-section a:hover {
-    color: #5e43f3;
-}
-
-.footer-bottom {
-    text-align: center;
-    padding-top: 2rem;
-    margin-top: 2rem;
-    border-top: 1px solid #222;
-    color: #555;
-    font-size: 0.85rem;
-}
-
-@media (max-width: 900px) {
-    .main-container {
-        flex-direction: column;
+  // Slideshow Data
+  const slides = [
+    {
+      id: 1,
+      title: "Welcome to EasyService",
+      desc: "Join our platform and connect with verified home service professionals instantly.",
+      bgImage: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000&auto=format&fit=crop"
+    },
+    {
+      id: 2,
+      title: "Secure & Reliable",
+      desc: "Experience transparent pricing and on-time service delivery right at your doorstep.",
+      bgImage: "https://images.unsplash.com/photo-1556910103-1c02745a872f?q=80&w=1000&auto=format&fit=crop"
+    },
+    {
+      id: 3,
+      title: "Manage Everything",
+      desc: "Track your bookings, communicate with experts, and handle payments all in one place.",
+      bgImage: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?q=80&w=1000&auto=format&fit=crop"
     }
-    .left-panel {
-        padding: 2rem;
-    }
-    .right-panel {
-        display: none; 
-    }
+  ];
+
+  // Trigger load animation on mount
+  useEffect(() => {
+    setIsLoaded(true);
+  }, []);
+
+  // Handle Slideshow crossfade timing
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % slides.length);
+    }, 5000); // Change slide every 5 seconds
+    return () => clearInterval(timer);
+  }, [slides.length]);
+
+  const togglePassword = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setShowPassword(!showPassword);
+  };
+
+  return (
+    <>
+      {/* Main Split Layout */}
+      <main className="main-container">
+        
+        {/* Left Side: Form Panel */}
+        <section className={`left-panel ${isLoaded ? 'loaded' : ''}`}>
+          <div className="form-card">
+            <div className="form-header">
+              <h1>Create Account</h1>
+              <p>Join EasyService and start booking top-tier home services.</p>
+            </div>
+
+            <form>
+              <div className="input-group">
+                <label>Username</label>
+                <div className="input-wrapper">
+                  <input type="text" placeholder="e.g. johndoe123" required />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label>Email</label>
+                <div className="input-wrapper">
+                  <input type="email" placeholder="you@example.com" required />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label>Password</label>
+                <div className="input-wrapper">
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    placeholder="Enter your password" 
+                    required 
+                  />
+                  <button onClick={togglePassword} className="show-password">
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" className="btn-submit">
+                Create Account
+              </button>
+
+              <div className="divider">OR</div>
+
+              <button type="button" className="btn-google">
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Sign up with Google
+              </button>
+            </form>
+
+            <div className="login-link">
+              Already have an account? <a href="/login">Login</a>
+            </div>
+          </div>
+        </section>
+
+        {/* Right Side: Fading Slideshow */}
+        <section className={`right-panel ${isLoaded ? 'loaded' : ''}`}>
+          <div className="slideshow-container">
+            {slides.map((slide, index) => (
+              <div 
+                key={slide.id} 
+                className={`slide ${currentSlide === index ? 'active' : ''}`}
+              >
+                {/* Image section with gradient fade at intersection */}
+                <div 
+                  className="slide-image-box" 
+                  style={{ backgroundImage: `url(${slide.bgImage})` }}
+                ></div>
+                
+                {/* Text Section */}
+                <div className="slide-text-box">
+                  <h2>{slide.title}</h2>
+                  <p>{slide.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+        
+      </main>
+
+      {/* Footer */}
+      <footer className="site-footer">
+        <div className="footer-grid">
+          <div className="footer-section">
+            <h3>EasyService Navigation</h3>
+            <ul>
+              <li><a href="/">Home</a></li>
+              <li><a href="#about">About Us</a></li>
+              <li><a href="#features">Features</a></li>
+              <li><a href="#contact">Contact Us</a></li>
+              <li><a href="/login">Login</a></li>
+            </ul>
+          </div>
+
+          <div className="footer-section">
+            <h3>Contact Us</h3>
+            <ul>
+              <li><a href="mailto:contact@easyservice.com">Email: contact@easyservice.com</a></li>
+              <li><a href="tel:+919876543210">Contact: +91 98765 43210</a></li>
+            </ul>
+          </div>
+
+          <div className="footer-section">
+            <h3>Find Us</h3>
+            <ul>
+              <li><span style={{color: '#888'}}>Address: 123 Service Lane, Metro City, 400001</span></li>
+              <li><a href="#">Instagram: @EasyService_Official</a></li>
+            </ul>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          &copy; {new Date().getFullYear()} EasyService. All rights reserved.
+        </div>
+      </footer>
+    </>
+  );
 }
