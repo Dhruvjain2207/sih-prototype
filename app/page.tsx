@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 
 interface UserItem {
   _id: string;
   name: string;
   email: string;
   role: string;
-  hasPassword?: boolean;
-  createdAt: string;
+  isVerified?: boolean;
 }
 
 interface GigItem {
@@ -22,541 +22,302 @@ interface GigItem {
     name?: string;
     email?: string;
   };
-  createdAt: string;
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"users" | "gigs">("users");
-  const [dbStatus, setDbStatus] = useState<{ connected: boolean; dbName?: string; message?: string }>({
-    connected: false,
-  });
+  const [dbConnected, setDbConnected] = useState(false);
+  const [showDbTester, setShowDbTester] = useState(false);
 
-  // User Form State
-  const [userName, setUserName] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [includePassword, setIncludePassword] = useState(true);
-  const [userPassword, setUserPassword] = useState("");
-  const [userRole, setUserRole] = useState("client");
-  const [userLoading, setUserLoading] = useState(false);
-  const [userAlert, setUserAlert] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  // Test data counts
+  const [usersCount, setUsersCount] = useState(0);
+  const [gigsCount, setGigsCount] = useState(0);
+  const [recentGigs, setRecentGigs] = useState<GigItem[]>([]);
 
-  // Gig Form State
-  const [gigTitle, setGigTitle] = useState("");
-  const [gigCategory, setGigCategory] = useState("Plumbing");
-  const [gigPrice, setGigPrice] = useState("");
-  const [gigLocation, setGigLocation] = useState("Mumbai, MH");
-  const [gigDesc, setGigDesc] = useState("");
-  const [gigLoading, setGigLoading] = useState(false);
-  const [gigAlert, setGigAlert] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-
-  // Data Lists State
-  const [usersList, setUsersList] = useState<UserItem[]>([]);
-  const [gigsList, setGigsList] = useState<GigItem[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Check DB status and fetch initial data
   useEffect(() => {
-    checkDbHealth();
-    fetchData();
+    fetchDbStatus();
   }, []);
 
-  const checkDbHealth = async () => {
+  const fetchDbStatus = async () => {
     try {
-      const res = await fetch("/api/db-test");
-      const data = await res.json();
-      if (data.status === "success") {
-        setDbStatus({ connected: true, dbName: data.databaseName, message: "MongoDB Connected" });
-      } else {
-        setDbStatus({ connected: false, message: data.message || "Failed to connect" });
-      }
-    } catch {
-      setDbStatus({ connected: false, message: "Server API Unavailable" });
-    }
-  };
+      const [dbRes, uRes, gRes] = await Promise.all([
+        fetch("/api/db-test"),
+        fetch("/api/users"),
+        fetch("/api/gigs"),
+      ]);
 
-  const fetchData = async () => {
-    setRefreshing(true);
-    try {
-      const [uRes, gRes] = await Promise.all([fetch("/api/users"), fetch("/api/gigs")]);
+      const dbData = await dbRes.json();
+      if (dbData.status === "success") setDbConnected(true);
+
       const uData = await uRes.json();
+      if (uData.success) setUsersCount(uData.count || 0);
+
       const gData = await gRes.json();
-
-      if (uData.success) setUsersList(uData.users || []);
-      if (gData.success) setGigsList(gData.gigs || []);
-    } catch (e) {
-      console.error("Error fetching data:", e);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  // Submit User Form
-  const handleUserSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setUserLoading(true);
-    setUserAlert(null);
-
-    try {
-      const payload: Record<string, unknown> = {
-        name: userName,
-        email: userEmail,
-        role: userRole,
-      };
-
-      if (includePassword && userPassword.trim()) {
-        payload.password = userPassword;
-      }
-
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setUserAlert({
-          type: "success",
-          msg: `User "${data.user.email}" added to DB! Password was ${data.user.hasPassword ? "hashed & saved" : "omitted (Optional)"}.`,
-        });
-        setUserName("");
-        setUserEmail("");
-        setUserPassword("");
-        fetchData();
-      } else {
-        setUserAlert({ type: "error", msg: data.error || "Failed to add user" });
+      if (gData.success) {
+        setGigsCount(gData.count || 0);
+        setRecentGigs((gData.gigs || []).slice(0, 4));
       }
     } catch {
-      setUserAlert({ type: "error", msg: "Network error connecting to API" });
-    } finally {
-      setUserLoading(false);
+      setDbConnected(false);
     }
   };
 
-  // Submit Gig Form
-  const handleGigSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setGigLoading(true);
-    setGigAlert(null);
-
-    try {
-      const res = await fetch("/api/gigs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: gigTitle,
-          category: gigCategory,
-          price: Number(gigPrice),
-          location: gigLocation,
-          description: gigDesc,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setGigAlert({
-          type: "success",
-          msg: `Gig "${data.gig.title}" created successfully in MongoDB!`,
-        });
-        setGigTitle("");
-        setGigPrice("");
-        setGigDesc("");
-        fetchData();
-      } else {
-        setGigAlert({ type: "error", msg: data.error || "Failed to create gig" });
-      }
-    } catch {
-      setGigAlert({ type: "error", msg: "Network error connecting to API" });
-    } finally {
-      setGigLoading(false);
-    }
-  };
+  const categories = [
+    { title: "Home Repair & Plumbing", count: "120+ Experts", icon: "🔧" },
+    { title: "Electrical & AC Repair", count: "95+ Experts", icon: "⚡" },
+    { title: "Web & Software Dev", count: "210+ Freelancers", icon: "💻" },
+    { title: "Graphic Design & Media", count: "150+ Designers", icon: "🎨" },
+    { title: "Cleaning & Housekeeping", count: "80+ Workers", icon: "🧹" },
+    { title: "Event Management", count: "45+ Organizers", icon: "🎉" },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans p-4 sm:p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
-        
-        {/* Top Header */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">⚡</span>
-              <h1 className="text-2xl font-bold tracking-tight">Gig Service Prototype</h1>
-            </div>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-              MongoDB Database & Schema Management Tester
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={fetchData}
-              disabled={refreshing}
-              className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              {refreshing ? "Refreshing..." : "🔄 Refresh Data"}
-            </button>
-            <div
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold border ${
-                dbStatus.connected
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800"
-                  : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${dbStatus.connected ? "bg-emerald-500" : "bg-amber-500"}`}></span>
-              {dbStatus.connected ? `MongoDB: ${dbStatus.dbName}` : `DB Notice: ${dbStatus.message}`}
-            </div>
-          </div>
-        </header>
-
-        {/* Main Grid: Form Entry + DB Live Data View */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white">
+      
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-950/80 border-b border-slate-800/80 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
           
-          {/* Left Column: Input Forms */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              
-              {/* Tab Navigation */}
-              <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6">
-                <button
-                  onClick={() => setActiveTab("users")}
-                  className={`pb-3 text-sm font-semibold px-4 transition-colors relative ${
-                    activeTab === "users"
-                      ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400"
-                      : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                  }`}
-                >
-                  ➕ Add User
-                </button>
-                <button
-                  onClick={() => setActiveTab("gigs")}
-                  className={`pb-3 text-sm font-semibold px-4 transition-colors relative ${
-                    activeTab === "gigs"
-                      ? "text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400"
-                      : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                  }`}
-                >
-                  🛠️ Add Gig Service
-                </button>
-              </div>
+          {/* Left Aligned Items: CoopConnect Brand Logo + Login + Register */}
+          <div className="flex items-center gap-8">
+            {/* Brand Logo */}
+            <Link href="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight group">
+              <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-400 flex items-center justify-center text-white text-lg shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
+                ⚡
+              </span>
+              <span className="bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+                CoopConnect
+              </span>
+            </Link>
 
-              {/* USER FORM */}
-              {activeTab === "users" && (
-                <form onSubmit={handleUserSubmit} className="space-y-4">
-                  <h2 className="text-base font-semibold">Add User to MongoDB</h2>
-                  <p className="text-xs text-slate-500">
-                    Test user schema insertion with optional password support.
-                  </p>
-
-                  {userAlert && (
-                    <div
-                      className={`p-3 rounded-lg text-xs border ${
-                        userAlert.type === "success"
-                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                          : "bg-red-50 text-red-800 border-red-200"
-                      }`}
-                    >
-                      {userAlert.msg}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Full Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Alex Morgan"
-                      value={userName}
-                      onChange={(e) => setUserName(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      placeholder="alex@example.com"
-                      value={userEmail}
-                      onChange={(e) => setUserEmail(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium mb-1">User Role</label>
-                    <select
-                      value={userRole}
-                      onChange={(e) => setUserRole(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="client">Client (Hire Services)</option>
-                      <option value="freelancer">Freelancer / Gig Worker</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-
-                  {/* Optional Password Toggle */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includePassword}
-                        onChange={(e) => setIncludePassword(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-xs font-semibold">Include Password?</span>
-                      <span className="text-[10px] text-slate-400 font-mono">(Schema: Password is Optional)</span>
-                    </label>
-
-                    {includePassword && (
-                      <div>
-                        <input
-                          type="password"
-                          placeholder="Set user password..."
-                          value={userPassword}
-                          onChange={(e) => setUserPassword(e.target.value)}
-                          className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={userLoading}
-                    className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors disabled:opacity-50"
-                  >
-                    {userLoading ? "Saving to MongoDB..." : "Submit User to DB"}
-                  </button>
-                </form>
-              )}
-
-              {/* GIG FORM */}
-              {activeTab === "gigs" && (
-                <form onSubmit={handleGigSubmit} className="space-y-4">
-                  <h2 className="text-base font-semibold">Create Gig Service</h2>
-                  <p className="text-xs text-slate-500">
-                    Insert a new gig listing into the MongoDB database.
-                  </p>
-
-                  {gigAlert && (
-                    <div
-                      className={`p-3 rounded-lg text-xs border ${
-                        gigAlert.type === "success"
-                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                          : "bg-red-50 text-red-800 border-red-200"
-                      }`}
-                    >
-                      {gigAlert.msg}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Gig Title</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Professional Home Plumbing Repair"
-                      value={gigTitle}
-                      onChange={(e) => setGigTitle(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Category</label>
-                      <select
-                        value={gigCategory}
-                        onChange={(e) => setGigCategory(e.target.value)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="Plumbing">Plumbing</option>
-                        <option value="Electrical">Electrical</option>
-                        <option value="Cleaning">Cleaning</option>
-                        <option value="Web Development">Web Development</option>
-                        <option value="Graphic Design">Graphic Design</option>
-                        <option value="AC Repair">AC Repair</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Price (₹)</label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 499"
-                        value={gigPrice}
-                        onChange={(e) => setGigPrice(e.target.value)}
-                        required
-                        min="1"
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Location</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Mumbai / Delhi / Remote"
-                      value={gigLocation}
-                      onChange={(e) => setGigLocation(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Service Description</label>
-                    <textarea
-                      placeholder="Describe the service details..."
-                      value={gigDesc}
-                      onChange={(e) => setGigDesc(e.target.value)}
-                      required
-                      rows={3}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    ></textarea>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={gigLoading}
-                    className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors disabled:opacity-50"
-                  >
-                    {gigLoading ? "Creating Gig..." : "Publish Gig to DB"}
-                  </button>
-                </form>
-              )}
-            </div>
+            {/* Left Nav Links: Login & Register */}
+            <nav className="hidden sm:flex items-center gap-2 pl-4 border-l border-slate-800">
+              <Link
+                href="/login"
+                className="px-3.5 py-1.5 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors"
+              >
+                Login
+              </Link>
+              <Link
+                href="/register"
+                className="px-3.5 py-1.5 text-sm font-semibold text-indigo-400 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-800/50 rounded-lg transition-colors"
+              >
+                Register
+              </Link>
+            </nav>
           </div>
 
-          {/* Right Column: DB Data Display */}
-          <div className="lg:col-span-7 space-y-6">
-            
-            {/* Users in Database Section */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-base font-bold flex items-center gap-2">
-                    👥 Users Collection
-                    <span className="text-xs font-normal text-slate-500">({usersList.length} stored)</span>
-                  </h2>
-                </div>
-                <a
-                  href="/api/users"
-                  target="_blank"
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  View Raw API JSON ↗
-                </a>
-              </div>
+          {/* Right Aligned Navigation Items & DB Tester Badge */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowDbTester(!showDbTester)}
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border border-slate-800 bg-slate-900 hover:border-slate-700 transition-colors"
+            >
+              <span className={`w-2 h-2 rounded-full ${dbConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></span>
+              <span className="text-slate-300">
+                {dbConnected ? "MongoDB Online" : "Check DB Status"}
+              </span>
+            </button>
 
-              {usersList.length === 0 ? (
-                <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                  <p className="text-sm text-slate-500">No users found in MongoDB yet.</p>
-                  <p className="text-xs text-slate-400 mt-1">Use the form on the left to add a user!</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                  {usersList.map((user) => (
-                    <div
-                      key={user._id}
-                      className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-sm truncate">{user.name}</span>
-                        <span
-                          className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                            user.role === "freelancer"
-                              ? "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
-                              : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-                          }`}
-                        >
-                          {user.role}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 truncate">{user.email}</p>
-                      <div className="flex items-center justify-between pt-1 text-[11px]">
-                        <span className="text-slate-400 font-mono text-[10px]">
-                          ID: ...{user._id.slice(-6)}
-                        </span>
-                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                          ✓ Saved in DB
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Gigs in Database Section */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-base font-bold flex items-center gap-2">
-                    🛠️ Gigs Collection
-                    <span className="text-xs font-normal text-slate-500">({gigsList.length} stored)</span>
-                  </h2>
-                </div>
-                <a
-                  href="/api/gigs"
-                  target="_blank"
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  View Raw API JSON ↗
-                </a>
-              </div>
-
-              {gigsList.length === 0 ? (
-                <div className="p-8 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                  <p className="text-sm text-slate-500">No gig services found in MongoDB yet.</p>
-                  <p className="text-xs text-slate-400 mt-1">Use the "Add Gig Service" tab to publish one!</p>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                  {gigsList.map((gig) => (
-                    <div
-                      key={gig._id}
-                      className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="font-semibold text-sm">{gig.title}</h3>
-                          <span className="inline-block mt-1 text-[11px] font-medium text-slate-500 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded">
-                            {gig.category}
-                          </span>
-                        </div>
-                        <span className="font-bold text-base text-emerald-600 dark:text-emerald-400">
-                          ₹{gig.price}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
-                        {gig.description}
-                      </p>
-                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-200/50 dark:border-slate-700/50">
-                        <span>Location: {gig.location || "Remote"}</span>
-                        <span>Provider: {gig.provider?.name || "Verified Freelancer"}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
+            <Link
+              href="/dashboard"
+              className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:shadow-indigo-600/50"
+            >
+              Go to Dashboard →
+            </Link>
           </div>
 
         </div>
+      </header>
 
-        {/* Footer info */}
-        <footer className="text-center text-xs text-slate-400 py-4">
-          Gig Service Prototype • Next.js 16 + Mongoose + Tailwind CSS
-        </footer>
+      {/* Hero Section */}
+      <section className="relative pt-24 pb-20 px-6 overflow-hidden">
+        {/* Background glow effects */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
-      </div>
+        <div className="max-w-5xl mx-auto text-center relative z-10 space-y-8">
+          
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-950/40 text-indigo-300 text-xs font-semibold backdrop-blur-md">
+            <span>🚀 SIH 2026 Smart Prototype</span>
+            <span className="w-1 h-1 rounded-full bg-indigo-400"></span>
+            <span>Email OTP & MongoDB Verified</span>
+          </div>
+
+          {/* Main Title */}
+          <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white leading-tight">
+            Connect with Skilled Local Experts & Services on{" "}
+            <span className="bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
+              CoopConnect
+            </span>
+          </h1>
+
+          {/* Subtitle */}
+          <p className="text-slate-400 text-lg sm:text-xl max-w-3xl mx-auto leading-relaxed">
+            The next-generation gig platform built for seamless service discovery, verified worker identity, instant OTP email activation, and direct booking.
+          </p>
+
+          {/* Action Call to Action */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <Link
+              href="/register"
+              className="w-full sm:w-auto px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-base rounded-2xl shadow-xl shadow-indigo-600/30 transition-all hover:scale-105"
+            >
+              Get Started for Free
+            </Link>
+            <Link
+              href="/login"
+              className="w-full sm:w-auto px-8 py-4 bg-slate-900 hover:bg-slate-800 text-slate-200 font-semibold text-base rounded-2xl border border-slate-800 transition-all"
+            >
+              Sign In to Your Account
+            </Link>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 max-w-2xl mx-auto pt-12 border-t border-slate-800/80 text-center">
+            <div>
+              <div className="text-3xl font-extrabold text-white">{usersCount > 0 ? `${usersCount}+` : "100%"}</div>
+              <div className="text-xs text-slate-400 mt-1">Verified Users Stored</div>
+            </div>
+            <div>
+              <div className="text-3xl font-extrabold text-indigo-400">{gigsCount > 0 ? `${gigsCount}+` : "Instant"}</div>
+              <div className="text-xs text-slate-400 mt-1">Active Gig Listings</div>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <div className="text-3xl font-extrabold text-cyan-400">Resend OTP</div>
+              <div className="text-xs text-slate-400 mt-1">Email Verification</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* Feature Highlights Grid */}
+      <section className="py-16 px-6 bg-slate-900/40 border-y border-slate-900">
+        <div className="max-w-6xl mx-auto space-y-12">
+          
+          <div className="text-center space-y-3">
+            <h2 className="text-3xl font-bold tracking-tight text-white">Why Choose CoopConnect?</h2>
+            <p className="text-slate-400 text-sm max-w-xl mx-auto">
+              Empowering workers and service seekers with secure authentication and modern digital infrastructure.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 hover:border-indigo-500/50 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-indigo-950 border border-indigo-800/50 flex items-center justify-center text-2xl">
+                🔐
+              </div>
+              <h3 className="text-lg font-bold text-white">Email OTP Verification</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                6-digit numeric verification code sent via Resend API ensuring only authentic users activate accounts.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 hover:border-indigo-500/50 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-indigo-950 border border-indigo-800/50 flex items-center justify-center text-2xl">
+                🍃
+              </div>
+              <h3 className="text-lg font-bold text-white">MongoDB Atlas Core</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Scalable database models for Users, Gigs, Bookings, and Reviews with Mongoose TypeScript definitions.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 hover:border-indigo-500/50 transition-colors">
+              <div className="w-12 h-12 rounded-xl bg-indigo-950 border border-indigo-800/50 flex items-center justify-center text-2xl">
+                🛡️
+              </div>
+              <h3 className="text-lg font-bold text-white">Auth.js & Next.js 16</h3>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Protected `/dashboard` routes secured with Next.js 16 `proxy.ts` middleware and JWT sessions.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* Popular Categories */}
+      <section className="py-20 px-6">
+        <div className="max-w-6xl mx-auto space-y-12">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-slate-800 pb-6">
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight text-white">Popular Gig Categories</h2>
+              <p className="text-slate-400 text-sm mt-1">Browse verified service offerings across top industries</p>
+            </div>
+            <Link href="/register" className="text-sm font-semibold text-indigo-400 hover:text-indigo-300">
+              Join as a Service Provider →
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {categories.map((cat, idx) => (
+              <div
+                key={idx}
+                className="p-6 rounded-2xl bg-slate-900/50 border border-slate-800/80 hover:border-slate-700 transition-all flex items-center justify-between group cursor-pointer"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-3xl p-3 bg-slate-800/80 rounded-xl group-hover:scale-110 transition-transform">
+                    {cat.icon}
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-white text-base group-hover:text-indigo-400 transition-colors">
+                      {cat.title}
+                    </h3>
+                    <span className="text-xs text-slate-400">{cat.count}</span>
+                  </div>
+                </div>
+                <span className="text-slate-600 group-hover:text-indigo-400 transition-colors">→</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Recent Gigs from MongoDB */}
+          {recentGigs.length > 0 && (
+            <div className="pt-8 space-y-6">
+              <h3 className="text-xl font-bold text-white">Recent Gigs in Database</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {recentGigs.map((gig) => (
+                  <div key={gig._id} className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <h4 className="font-bold text-white">{gig.title}</h4>
+                      <span className="text-indigo-400 font-extrabold text-sm">₹{gig.price}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{gig.description}</p>
+                    <div className="text-[11px] text-slate-500 pt-2 flex justify-between">
+                      <span>Category: {gig.category}</span>
+                      <span>Provider: {gig.provider?.name || "Verified Expert"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="mt-auto border-t border-slate-900 bg-slate-950 py-12 px-6">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-slate-400 text-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-lg">⚡</span>
+            <span className="font-bold text-slate-200">CoopConnect</span>
+            <span>• Smart India Hackathon Prototype</span>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <Link href="/login" className="hover:text-white transition-colors">Login</Link>
+            <Link href="/register" className="hover:text-white transition-colors">Register</Link>
+            <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+          </div>
+
+          <div>
+            &copy; {new Date().getFullYear()} CoopConnect. All rights reserved.
+          </div>
+        </div>
+      </footer>
+
     </div>
   );
 }

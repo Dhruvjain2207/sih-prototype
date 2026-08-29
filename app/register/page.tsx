@@ -1,19 +1,33 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import './register.css'; // Link to the CSS file above
+import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import styles from './register.module.css';
 
 export default function Register() {
+  const router = useRouter();
   const [isLoaded, setIsLoaded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  // Flow State: 'register' -> 'otp'
+  const [step, setStep] = useState<'register' | 'otp'>('register');
+
   // Form State
+  const [role, setRole] = useState<'client' | 'freelancer'>('client');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [skills, setSkills] = useState('');
+  const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // OTP State (6 Digits)
+  const [otpValues, setOtpValues] = useState<string[]>(Array(6).fill(''));
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Slideshow Data
   const slides = [
@@ -37,55 +51,175 @@ export default function Register() {
     }
   ];
 
-  // Trigger load animation on mount
   useEffect(() => {
     setIsLoaded(true);
   }, []);
 
-  // Handle Slideshow crossfade timing
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slides.length);
-    }, 5000); // Change slide every 5 seconds
+    }, 5000);
     return () => clearInterval(timer);
   }, [slides.length]);
+
+  // Handle Resend Cooldown Countdown Timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
   const togglePassword = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setShowPassword(!showPassword);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // STEP 1: Handle User Registration Submit
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStatusMessage(null);
+
+    const toastId = toast.loading("Initiating registration...");
 
     try {
-      const res = await fetch('/api/users', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: username,
           email,
-          password: password || undefined, // Password is optional
+          password: password || undefined,
+          role,
+          phone: role === 'freelancer' ? phone : undefined,
+          skills: role === 'freelancer' ? skills : undefined,
+          bio: role === 'freelancer' ? bio : undefined,
         }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setStatusMessage({
-          type: 'success',
-          text: `User ${data.user.email} successfully created in MongoDB! ${data.user.hasPassword ? '(Password hashed)' : '(Password omitted)'}`,
-        });
-        setUsername('');
-        setEmail('');
-        setPassword('');
+        toast.success(
+          data.message || "A 6-digit OTP code has been sent to your email!",
+          { id: toastId, duration: 4000 }
+        );
+        if (data.devOtp) {
+          console.log(`[DEV OTP HINT] Your OTP code is: ${data.devOtp}`);
+        }
+        setStep('otp');
+        setResendCooldown(30); // 30-second cooldown for resend button
       } else {
-        setStatusMessage({ type: 'error', text: data.error || 'Registration failed' });
+        toast.error(data.error || "Registration failed", { id: toastId });
       }
     } catch {
-      setStatusMessage({ type: 'error', text: 'Network error connecting to MongoDB API' });
+      toast.error("Network error connecting to server", { id: toastId });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // STEP 2: Handle Single Digit OTP Input Changes
+  const handleOtpChange = (index: number, value: string) => {
+    if (value.length > 1) {
+      // Paste handling
+      const digits = value.replace(/\D/g, '').slice(0, 6).split('');
+      const newOtp = [...otpValues];
+      digits.forEach((digit, idx) => {
+        newOtp[idx] = digit;
+      });
+      setOtpValues(newOtp);
+      const nextFocus = Math.min(digits.length, 5);
+      otpInputRefs.current[nextFocus]?.focus();
+      return;
+    }
+
+    const digit = value.replace(/\D/g, '');
+    const newOtp = [...otpValues];
+    newOtp[index] = digit;
+    setOtpValues(newOtp);
+
+    // Auto-focus next input box
+    if (digit && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpValues[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  // STEP 2: Handle OTP Verification Submit
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const fullOtp = otpValues.join('');
+
+    if (fullOtp.length < 6) {
+      toast.error("Please enter the complete 6-digit OTP code");
+      return;
+    }
+
+    setLoading(true);
+    const toastId = toast.loading("Verifying OTP code...");
+
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: fullOtp }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        toast.success("Email verified successfully! Redirecting to login...", {
+          id: toastId,
+          duration: 3000,
+        });
+        setTimeout(() => {
+          router.push('/login');
+        }, 1500);
+      } else {
+        toast.error(data.error || "Invalid or expired OTP code", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error verifying OTP", { id: toastId });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // STEP 2: Handle Resend OTP Code
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+
+    setLoading(true);
+    const toastId = toast.loading("Sending a new OTP code...");
+
+    try {
+      const res = await fetch('/api/auth/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        toast.success(data.message || "New OTP code sent to your email!", { id: toastId });
+        setOtpValues(Array(6).fill(''));
+        setResendCooldown(30);
+        if (data.devOtp) {
+          console.log(`[DEV OTP HINT] New OTP code is: ${data.devOtp}`);
+        }
+      } else {
+        toast.error(data.error || "Failed to resend OTP", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error resending OTP", { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -93,114 +227,241 @@ export default function Register() {
 
   return (
     <>
-      {/* Main Split Layout */}
-      <main className="main-container">
-        
+      <main className={styles['main-container']}>
         {/* Left Side: Form Panel */}
-        <section className={`left-panel ${isLoaded ? 'loaded' : ''}`}>
-          <div className="form-card">
-            <div className="form-header">
-              <h1>Create Account</h1>
-              <p>Join EasyService and start booking top-tier home services.</p>
-            </div>
+        <section className={`${styles['left-panel']} ${isLoaded ? styles.loaded : ''}`}>
+          <div className={styles['form-card']} style={{ width: '100%', maxWidth: '400px' }}>
+            
+            {/* STEP 1: REGISTER FORM */}
+            {step === 'register' && (
+              <>
+                <div className={styles['form-header']}>
+                  <h1>Create Account</h1>
+                  <p>Join EasyService and connect with verified service experts.</p>
+                </div>
 
-            {statusMessage && (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '6px',
-                  marginBottom: '16px',
-                  fontSize: '14px',
-                  backgroundColor: statusMessage.type === 'success' ? '#d1fae5' : '#fee2e2',
-                  color: statusMessage.type === 'success' ? '#065f46' : '#991b1b',
-                  border: `1px solid ${statusMessage.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
-                }}
-              >
-                {statusMessage.text}
-              </div>
+                <div className={styles['role-selector']}>
+                  <div
+                    className={`${styles['role-card']} ${role === 'client' ? styles.active : ''}`}
+                    onClick={() => setRole('client')}
+                  >
+                    <span className={styles['role-icon']}>👤</span>
+                    <span className={styles['role-title']}>Client</span>
+                    <span className={styles['role-subtitle']}>Hire Professionals</span>
+                  </div>
+                  <div
+                    className={`${styles['role-card']} ${role === 'freelancer' ? styles.active : ''}`}
+                    onClick={() => setRole('freelancer')}
+                  >
+                    <span className={styles['role-icon']}>🛠️</span>
+                    <span className={styles['role-title']}>Freelancer</span>
+                    <span className={styles['role-subtitle']}>Offer Services</span>
+                  </div>
+                </div>
+
+                <form onSubmit={handleRegisterSubmit}>
+                  <div className={styles['input-group']}>
+                    <label>Name / Username</label>
+                    <div className={styles['input-wrapper']}>
+                      <input
+                        type="text"
+                        placeholder="e.g. johndoe123"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles['input-group']}>
+                    <label>Email Address</label>
+                    <div className={styles['input-wrapper']}>
+                      <input
+                        type="email"
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles['input-group']}>
+                    <label>Password</label>
+                    <div className={styles['input-wrapper']}>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
+                      <button type="button" onClick={togglePassword} className={styles['show-password']}>
+                        {showPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {role === 'freelancer' && (
+                    <>
+                      <div className={styles['input-group']}>
+                        <label>Phone Number</label>
+                        <div className={styles['input-wrapper']}>
+                          <input
+                            type="tel"
+                            placeholder="+91 98765 43210"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={styles['input-group']}>
+                        <label>Primary Skills / Specialization (comma separated)</label>
+                        <div className={styles['input-wrapper']}>
+                          <input
+                            type="text"
+                            placeholder="e.g. Plumbing, Electrical, Cleaning"
+                            value={skills}
+                            onChange={(e) => setSkills(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={styles['input-group']}>
+                        <label>Short Bio / Tagline</label>
+                        <div className={styles['input-wrapper']}>
+                          <input
+                            type="text"
+                            placeholder="e.g. Certified electrician with 5+ yrs experience"
+                            value={bio}
+                            onChange={(e) => setBio(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <button type="submit" className={styles['btn-submit']} disabled={loading}>
+                    {loading ? 'Processing...' : `Register as ${role === 'freelancer' ? 'Freelancer' : 'Client'} & Get OTP`}
+                  </button>
+
+                  <div className={styles.divider}>OR</div>
+
+                  <button type="button" className={styles['btn-google']} disabled title="Google sign in coming soon">
+                    <svg width="18" height="18" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    Sign up with Google (Coming Soon)
+                  </button>
+                </form>
+
+                <div className={styles['login-link']}>
+                  Already have an account? <a href="/login">Login</a>
+                </div>
+              </>
             )}
 
-            <form onSubmit={handleSubmit}>
-              <div className="input-group">
-                <label>Name / Username</label>
-                <div className="input-wrapper">
-                  <input
-                    type="text"
-                    placeholder="e.g. johndoe123"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
+            {/* STEP 2: OTP VERIFICATION FORM */}
+            {step === 'otp' && (
+              <>
+                <div className={styles['form-header']}>
+                  <div style={{ fontSize: '36px', marginBottom: '8px' }}>🔐</div>
+                  <h1>Verify Email OTP</h1>
+                  <p style={{ marginTop: '6px' }}>
+                    We sent a 6-digit verification code to: <br />
+                    <strong style={{ color: '#5e43f3' }}>{email}</strong>
+                  </p>
                 </div>
-              </div>
 
-              <div className="input-group">
-                <label>Email</label>
-                <div className="input-wrapper">
-                  <input
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
+                <form onSubmit={handleVerifyOtpSubmit}>
+                  {/* 6 Digit Code Inputs */}
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '20px' }}>
+                    {otpValues.map((digit, idx) => (
+                      <input
+                        key={idx}
+                        ref={(el) => { otpInputRefs.current[idx] = el; }}
+                        type="text"
+                        maxLength={6}
+                        value={digit}
+                        onChange={(e) => handleOtpChange(idx, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                        style={{
+                          width: '48px',
+                          height: '54px',
+                          textAlign: 'center',
+                          fontSize: '20px',
+                          fontWeight: 'bold',
+                          backgroundColor: '#050505',
+                          border: '1px solid #333',
+                          borderRadius: '8px',
+                          color: '#ffffff',
+                          outline: 'none',
+                        }}
+                      />
+                    ))}
+                  </div>
 
-              <div className="input-group">
-                <label>Password <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}>(Optional)</span></label>
-                <div className="input-wrapper">
-                  <input 
-                    type={showPassword ? "text" : "password"} 
-                    placeholder="Enter password (optional)" 
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button type="button" onClick={togglePassword} className="show-password">
-                    {showPassword ? 'Hide' : 'Show'}
+                  <button type="submit" className={styles['btn-submit']} disabled={loading}>
+                    {loading ? 'Verifying OTP...' : 'Verify OTP & Activate Account'}
                   </button>
-                </div>
-              </div>
 
-              <button type="submit" className="btn-submit" disabled={loading}>
-                {loading ? 'Saving to Database...' : 'Create Account'}
-              </button>
+                  <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={resendCooldown > 0 || loading}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: resendCooldown > 0 ? '#666' : '#5e43f3',
+                        cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                      }}
+                    >
+                      {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : 'Resend OTP Code'}
+                    </button>
+                  </div>
 
-              <div className="divider">OR</div>
+                  <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setStep('register')}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#888',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      ← Change Email / Back to Register
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
 
-              <button type="button" className="btn-google">
-                <svg width="18" height="18" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                </svg>
-                Sign up with Google
-              </button>
-            </form>
-
-            <div className="login-link">
-              Already have an account? <a href="/login">Login</a>
-            </div>
           </div>
         </section>
 
-        {/* Right Side: Fading Slideshow */}
-        <section className={`right-panel ${isLoaded ? 'loaded' : ''}`}>
-          <div className="slideshow-container">
+        {/* Right Side: Slideshow */}
+        <section className={`${styles['right-panel']} ${isLoaded ? styles.loaded : ''}`}>
+          <div className={styles['slideshow-container']}>
             {slides.map((slide, index) => (
               <div 
                 key={slide.id} 
-                className={`slide ${currentSlide === index ? 'active' : ''}`}
+                className={`${styles.slide} ${currentSlide === index ? styles.active : ''}`}
               >
-                {/* Image section with gradient fade at intersection */}
                 <div 
-                  className="slide-image-box" 
+                  className={styles['slide-image-box']} 
                   style={{ backgroundImage: `url(${slide.bgImage})` }}
                 ></div>
-                
-                {/* Text Section */}
-                <div className="slide-text-box">
+                <div className={styles['slide-text-box']}>
                   <h2>{slide.title}</h2>
                   <p>{slide.desc}</p>
                 </div>
@@ -208,13 +469,12 @@ export default function Register() {
             ))}
           </div>
         </section>
-        
       </main>
 
       {/* Footer */}
-      <footer className="site-footer">
-        <div className="footer-grid">
-          <div className="footer-section">
+      <footer className={styles['site-footer']}>
+        <div className={styles['footer-grid']}>
+          <div className={styles['footer-section']}>
             <h3>EasyService Navigation</h3>
             <ul>
               <li><a href="/">Home</a></li>
@@ -225,7 +485,7 @@ export default function Register() {
             </ul>
           </div>
 
-          <div className="footer-section">
+          <div className={styles['footer-section']}>
             <h3>Contact Us</h3>
             <ul>
               <li><a href="mailto:contact@easyservice.com">Email: contact@easyservice.com</a></li>
@@ -233,7 +493,7 @@ export default function Register() {
             </ul>
           </div>
 
-          <div className="footer-section">
+          <div className={styles['footer-section']}>
             <h3>Find Us</h3>
             <ul>
               <li><span style={{color: '#888'}}>Address: 123 Service Lane, Metro City, 400001</span></li>
@@ -241,7 +501,7 @@ export default function Register() {
             </ul>
           </div>
         </div>
-        <div className="footer-bottom">
+        <div className={styles['footer-bottom']}>
           &copy; {new Date().getFullYear()} EasyService. All rights reserved.
         </div>
       </footer>

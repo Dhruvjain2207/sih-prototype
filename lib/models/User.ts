@@ -10,6 +10,9 @@ export interface IUser extends Document {
   skills?: string[];
   bio?: string;
   rating?: number;
+  isVerified: boolean;
+  otp?: string;
+  otpExpiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +30,19 @@ const UserSchema = new Schema<IUser>(
       unique: true,
       lowercase: true,
       trim: true,
+    },
+    isVerified: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    otp: {
+      type: String,
+      required: false,
+    },
+    otpExpiresAt: {
+      type: Date,
+      required: false,
     },
     password: {
       type: String,

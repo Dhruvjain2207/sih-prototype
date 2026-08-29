@@ -1,30 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-/* Global & Reset */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Inter', sans-serif;
-}
-
-body {
-    background-color: #0a0a0a;
-    color: #ffffff;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
-
 /* Main Layout - Asymmetric Split */
 .main-container {
     flex: 1;
     display: flex;
     max-width: 1500px;
-    margin: 0;
-    width: 100vw;
-    height: 100vh;
+    margin: 0 auto;
+    width: 100%;
     overflow: hidden;
+    min-height: 100vh;
+    background-color: #0a0a0a;
+    color: #ffffff;
 }
 
 /* Left Panel - Narrower */
@@ -36,20 +20,18 @@ body {
     padding: 2rem 4rem;
     opacity: 0; 
     transform: translateX(-50px);
-    height: 100vh; 
 }
 
 /* Right Panel - Wider */
 .right-panel {
     flex: 1.4; /* Takes ~70% of the space */
     position: relative;
-    padding: 2rem;
+    padding: 0; /* Padding removed */
     display: flex;
     flex-direction: column;
     justify-content: center;
     opacity: 0; 
-    height: 100vh;
-    background-color: #4c36d6;
+    background-color: #5142d7; /* Matches the solid background in your reference image */
 }
 
 /* Entry Animations */
@@ -212,6 +194,33 @@ body {
     cursor: pointer;
 }
 
+/* Login specific options */
+.login-options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+}
+
+.remember-me {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #bbb;
+    cursor: pointer;
+}
+
+.forgot-password {
+    color: #5e43f3;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.forgot-password:hover {
+    text-decoration: underline;
+}
+
 .btn-submit {
     width: 100%;
     background-color: #5e43f3;
@@ -222,7 +231,6 @@ body {
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    margin-top: 0.5rem;
     transition: background-color 0.2s;
 }
 
@@ -243,31 +251,7 @@ body {
     font-weight: 600;
 }
 
-.btn-google{
-    width: 100%;
-    border: none;
-    padding: 1rem;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    margin-top: 0.5rem;
-    transition: background-color 0.2s;
-}
-
-/* Remove padding from the parent container and add the purple background */
-.right-panel {
-    flex: 1.2; 
-    position: relative;
-    padding: 0; /* Padding removed */
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    opacity: 0; 
-    background-color: #5142d7; /* Matches the solid background in your reference image */
-}
-
-/* Ensure the slideshow container takes up the full space */
+/* Slideshow */
 .slideshow-container {
     position: relative;
     width: 100%;
@@ -278,7 +262,6 @@ body {
     justify-content: center;
 }
 
-/* The rest of your slide CSS remains the same */
 .slide {
     position: absolute;
     top: 0;
