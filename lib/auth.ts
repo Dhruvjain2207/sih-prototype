@@ -1,5 +1,6 @@
 import NextAuth, { DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
 import "next-auth/jwt";
 import connectToDatabase from "@/lib/mongodb";
 import User from "@/lib/models/User";
@@ -32,6 +33,10 @@ declare module "next-auth/jwt" {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
     Credentials({
       name: "Credentials",
       credentials: {
@@ -77,11 +82,45 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.isVerified = user.isVerified;
+    async signIn({ user, account, profile }) {
+      if (account?.provider === "google") {
+        if (!user.email) return false;
+        const email = user.email.toLowerCase().trim();
+
+        await connectToDatabase();
+
+        let dbUser = await User.findOne({ email });
+
+        if (!dbUser) {
+          // Create user in MongoDB for Google Auth (no OTP required, set isVerified: true)
+          dbUser = await User.create({
+            name: user.name || profile?.name || email.split("@")[0],
+            email,
+            image: user.image || (profile as { picture?: string })?.picture || "",
+            isVerified: true,
+            role: "client",
+          });
+        } else if (!dbUser.isVerified) {
+          // Google authentication confirms ownership of the email address
+          dbUser.isVerified = true;
+          await dbUser.save();
+        }
+      }
+      return true;
+    },
+    async jwt({ token, user, account }) {
+      if (account || user) {
+        await connectToDatabase();
+        const dbUser = await User.findOne({ email: token.email?.toLowerCase().trim() });
+        if (dbUser) {
+          token.id = dbUser._id.toString();
+          token.role = dbUser.role;
+          token.isVerified = dbUser.isVerified;
+        } else if (user) {
+          token.id = user.id;
+          token.role = user.role;
+          token.isVerified = user.isVerified ?? true;
+        }
       }
       return token;
     },
