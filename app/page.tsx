@@ -27,6 +27,7 @@ interface GigItem {
 export default function Home() {
   const [dbConnected, setDbConnected] = useState(false);
   const [showDbTester, setShowDbTester] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Test data counts
   const [usersCount, setUsersCount] = useState(0);
@@ -74,7 +75,7 @@ export default function Home() {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white">
       
       {/* Top Navbar */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-950/80 border-b border-slate-800/80 px-4 sm:px-6 py-3.5">
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-950/90 border-b border-slate-800/80 px-4 sm:px-6 py-3.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
           
           {/* Brand Logo */}
@@ -118,22 +119,59 @@ export default function Home() {
             </button>
 
             <Link
-              href="/login"
-              className="md:hidden px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-900 border border-slate-800 rounded-lg transition-colors"
-            >
-              Login
-            </Link>
-
-            <Link
               href="/dashboard"
-              className="px-3.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-600/30 transition-all"
+              className="hidden sm:inline-flex px-3.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-600/30 transition-all"
             >
               Dashboard →
             </Link>
+
+            {/* Mobile Hamburger Toggle */}
+            <button
+              onClick={() => setMobileNavOpen(!mobileNavOpen)}
+              className="md:hidden p-2 text-slate-300 hover:text-white bg-slate-900 border border-slate-800 rounded-xl"
+              aria-label="Toggle Mobile Navigation"
+            >
+              {mobileNavOpen ? (
+                <span className="text-lg font-bold">✕</span>
+              ) : (
+                <span className="text-lg font-bold">☰</span>
+              )}
+            </button>
           </div>
 
         </div>
+
+        {/* Mobile Dropdown Menu */}
+        {mobileNavOpen && (
+          <div className="md:hidden pt-3 pb-2 border-t border-slate-800/80 mt-3 flex flex-col gap-2">
+            <Link
+              href="/login"
+              onClick={() => setMobileNavOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-900 rounded-lg transition-colors flex items-center justify-between"
+            >
+              <span>Login</span>
+              <span>→</span>
+            </Link>
+            <Link
+              href="/register"
+              onClick={() => setMobileNavOpen(false)}
+              className="px-4 py-2 text-sm font-semibold text-indigo-400 bg-indigo-950/40 hover:bg-indigo-900/40 border border-indigo-800/50 rounded-lg transition-colors flex items-center justify-between"
+            >
+              <span>Register Account</span>
+              <span>⚡</span>
+            </Link>
+            <Link
+              href="/dashboard"
+              onClick={() => setMobileNavOpen(false)}
+              className="px-4 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-colors flex items-center justify-between shadow-md"
+            >
+              <span>Go to Dashboard</span>
+              <span>→</span>
+            </Link>
+          </div>
+        )}
       </header>
+
 
       {/* Hero Section */}
       <section className="relative pt-24 pb-20 px-6 overflow-hidden">

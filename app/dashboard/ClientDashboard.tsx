@@ -22,6 +22,7 @@ import {
   FileText,
   Ban,
   Search,
+  Menu,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './client.css';
@@ -110,6 +111,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
   const [activeTab, setActiveTab] = useState<'services' | 'bookings' | 'history'>('services');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Real Database States
   const [bookings, setBookings] = useState<any[]>([]);
@@ -354,46 +356,164 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
             )}
           </div>
 
-          {/* User Profile */}
-          <div className="nav-icon-container">
-            <button className={`nav-icon ${activeMenu === 'profile' ? 'active' : ''}`} onClick={() => toggleMenu('profile')}>
-              <User size={20} />
+          {/* Desktop Only Navigation Items */}
+          <div className="desktop-only-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {/* User Profile */}
+            <div className="nav-icon-container">
+              <button className={`nav-icon ${activeMenu === 'profile' ? 'active' : ''}`} onClick={() => toggleMenu('profile')}>
+                <User size={20} />
+              </button>
+              {activeMenu === 'profile' && (
+                <div className="dropdown-menu profile-menu glass-panel">
+                  <div className="profile-header">
+                    <div className="avatar-gradient">{userInitials}</div>
+                    <div className="profile-titles">
+                      <span className="profile-name">{session?.user?.name || 'User'}</span>
+                      <span className="text-muted text-xs">{session?.user?.email || 'No email'}</span>
+                    </div>
+                  </div>
+                  <div className="menu-divider"></div>
+                  <div className="profile-details">
+                    <div className="detail-row">
+                      <span>Account Role:</span>
+                      <span className="text-gradient font-semibold capitalize">Customer / Client</span>
+                    </div>
+                  </div>
+                  <div className="menu-divider"></div>
+                  <button className="action-btn danger-btn" onClick={handleLogout}>
+                    <LogOut size={14} /> Log Out
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Logout Button */}
+            <button
+              className="nav-item danger-btn"
+              onClick={handleLogout}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+            >
+              <LogOut size={16} />
+              <span>Logout</span>
             </button>
-            {activeMenu === 'profile' && (
-              <div className="dropdown-menu profile-menu glass-panel">
-                <div className="profile-header">
-                  <div className="avatar-gradient">{userInitials}</div>
-                  <div className="profile-titles">
-                    <span className="profile-name">{session?.user?.name || 'User'}</span>
-                    <span className="text-muted text-xs">{session?.user?.email || 'No email'}</span>
-                  </div>
-                </div>
-                <div className="menu-divider"></div>
-                <div className="profile-details">
-                  <div className="detail-row">
-                    <span>Account Role:</span>
-                    <span className="text-gradient font-semibold capitalize">Customer / Client</span>
-                  </div>
-                </div>
-                <div className="menu-divider"></div>
-                <button className="action-btn danger-btn" onClick={handleLogout}>
-                  <LogOut size={14} /> Log Out
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Logout Button */}
+
+          {/* Hamburger Menu Toggle Button for Mobile */}
           <button
-            className="nav-item danger-btn"
-            onClick={handleLogout}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+            className="mobile-hamburger-btn"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle Navigation Sidebar"
           >
-            <LogOut size={16} />
-            <span>Logout</span>
+            {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
       </nav>
+
+      {/* MOBILE HAMBURGER SIDEBAR / DRAWER */}
+      {isMobileMenuOpen && (
+        <div className="mobile-drawer-overlay" onClick={() => setIsMobileMenuOpen(false)}>
+          <div className="mobile-drawer-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-drawer-header">
+              <div className="mobile-drawer-title">
+                <div className="brand-logo" style={{ width: '28px', height: '28px', fontSize: '1rem' }}>⚡</div>
+                <span>CoopConnect</span>
+              </div>
+              <button className="close-btn-modern" onClick={() => setIsMobileMenuOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mobile-drawer-body">
+              {/* User Profile Summary */}
+              <div className="mobile-drawer-user-card">
+                <div className="mobile-drawer-avatar">{userInitials}</div>
+                <div className="mobile-drawer-user-info">
+                  <div className="mobile-drawer-user-name">{session?.user?.name || 'Customer'}</div>
+                  <div className="mobile-drawer-user-email">{session?.user?.email || 'Client Account'}</div>
+                </div>
+              </div>
+
+              {/* Location Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.85rem', color: '#94a3b8' }}>
+                <MapPin size={16} className="text-gradient" />
+                <span>Location: <strong style={{ color: '#ffffff' }}>Patna, Bihar</strong></span>
+              </div>
+
+              {/* Navigation Options */}
+              <div>
+                <div className="mobile-drawer-section-title">Navigation Options</div>
+                <div className="mobile-drawer-nav">
+                  <button
+                    className={`mobile-drawer-item ${activeTab === 'services' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('services'); setIsMobileMenuOpen(false); }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Wrench size={16} /> Select & Book Service
+                    </span>
+                    <span>↗</span>
+                  </button>
+
+                  <button
+                    className={`mobile-drawer-item ${activeTab === 'bookings' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('bookings'); setIsMobileMenuOpen(false); }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Calendar size={16} /> Active Bookings
+                    </span>
+                    {activeBookings.length > 0 && (
+                      <span style={{ background: '#38bdf8', color: '#090d16', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+                        {activeBookings.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    className={`mobile-drawer-item ${activeTab === 'history' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('history'); setIsMobileMenuOpen(false); }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Clock size={16} /> Past History
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>({pastBookings.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Notifications Link */}
+              <div>
+                <div className="mobile-drawer-section-title">Quick Actions</div>
+                <button
+                  className="mobile-drawer-item"
+                  onClick={() => {
+                    toggleMenu('notifications');
+                    if (unreadNotificationsCount > 0) handleMarkNotificationsRead();
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <Bell size={16} /> Notifications
+                  </span>
+                  {unreadNotificationsCount > 0 && (
+                    <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '10px' }}>
+                      {unreadNotificationsCount} new
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Logout Footer Option */}
+            <div className="mobile-drawer-footer">
+              <button className="mobile-drawer-item danger-item" onClick={handleLogout}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <LogOut size={16} /> Logout from Account
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MAIN CONTAINER */}
       <div className="client-container">
@@ -419,45 +539,21 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         </div>
 
         {/* NAVIGATION TABS */}
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
+        <div className="client-tabs-container">
           <button
             onClick={() => setActiveTab('services')}
-            style={{
-              background: activeTab === 'services' ? '#6366f1' : 'transparent',
-              color: activeTab === 'services' ? '#ffffff' : '#94a3b8',
-              border: 'none',
-              padding: '0.6rem 1.25rem',
-              borderRadius: '10px',
-              fontWeight: 700,
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-            }}
+            className={`client-tab-btn ${activeTab === 'services' ? 'active' : ''}`}
           >
             <Wrench size={16} /> Select & Book Service
           </button>
 
           <button
             onClick={() => setActiveTab('bookings')}
-            style={{
-              background: activeTab === 'bookings' ? '#6366f1' : 'transparent',
-              color: activeTab === 'bookings' ? '#ffffff' : '#94a3b8',
-              border: 'none',
-              padding: '0.6rem 1.25rem',
-              borderRadius: '10px',
-              fontWeight: 700,
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-            }}
+            className={`client-tab-btn ${activeTab === 'bookings' ? 'active' : ''}`}
           >
             <Calendar size={16} /> Active Bookings
             {activeBookings.length > 0 && (
-              <span style={{ background: '#38bdf8', color: '#090d16', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+              <span style={{ background: activeTab === 'bookings' ? '#ffffff' : '#38bdf8', color: activeTab === 'bookings' ? '#6366f1' : '#090d16', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
                 {activeBookings.length}
               </span>
             )}
@@ -465,23 +561,12 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
 
           <button
             onClick={() => setActiveTab('history')}
-            style={{
-              background: activeTab === 'history' ? '#6366f1' : 'transparent',
-              color: activeTab === 'history' ? '#ffffff' : '#94a3b8',
-              border: 'none',
-              padding: '0.6rem 1.25rem',
-              borderRadius: '10px',
-              fontWeight: 700,
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-            }}
+            className={`client-tab-btn ${activeTab === 'history' ? 'active' : ''}`}
           >
             <Clock size={16} /> Past History ({pastBookings.length})
           </button>
         </div>
+
 
         {/* TAB 1: SERVICE CATEGORIES SELECTION */}
         {activeTab === 'services' && (
@@ -660,166 +745,263 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         )}
       </div>
 
-      {/* BOOKING MODAL (PROBLEM DESCRIPTION & ADDRESS ENTRY) */}
+      {/* BOOKING MODAL (PREMIUM & RESPONSIVE DESIGN) */}
       {selectedCategory && (
         <div className="modal-overlay">
-          <div className="modal-box glass-panel" style={{ maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="modal-header">
-              <div className="modal-title-wrapper">
-                <CheckCircle2 size={20} className="text-gradient" />
-                <span>Book {selectedCategory.name}</span>
+          <div className="modal-box-modern">
+            <div className="modal-header-modern">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-950 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  {selectedCategory.icon ? <selectedCategory.icon size={20} /> : <Wrench size={20} />}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-white text-lg leading-tight">Book {selectedCategory.name}</h3>
+                  <span className="text-xs text-slate-400">Direct booking with verified experts</span>
+                </div>
               </div>
-              <button className="close-btn-modern" onClick={() => setSelectedCategory(null)}><X size={18} /></button>
+              <button className="close-btn-modern" onClick={() => setSelectedCategory(null)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleBookServiceSubmit} className="modal-body" style={{ paddingTop: '1.25rem' }}>
-              <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.85rem 1rem', borderRadius: '10px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <form onSubmit={handleBookServiceSubmit} className="modal-body-modern">
+              {/* Fee Snapshot Pill */}
+              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/20 mb-5">
                 <div>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Est. Service Fee:</span>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#38bdf8' }}>₹{selectedCategory.price}</div>
+                  <span className="text-xs text-slate-400">Estimated Fee</span>
+                  <div className="text-xl font-black text-sky-400">₹{selectedCategory.price}</div>
                 </div>
-                <span style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '0.25rem 0.6rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700 }}>
-                  💵 Pay Cash After Work
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 flex items-center gap-1">
+                  💵 Cash Payment After Work
                 </span>
               </div>
 
-              {/* Problem Description Input */}
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ fontSize: '0.85rem', color: '#ffffff', fontWeight: 700, marginBottom: '0.35rem', display: 'block' }}>
-                  1. Problem / Task Description *
-                </label>
+              {/* STEP 1: Problem Description */}
+              <div className="modal-form-step-card">
+                <div className="modal-step-title">
+                  <span>1. Task / Problem Description *</span>
+                </div>
                 <textarea
                   rows={3}
-                  placeholder={`Describe your ${selectedCategory.name} requirement in detail (e.g. Kitchen tap leaking, switchboard short circuit, room deep cleaning needed)...`}
+                  placeholder={`Describe your ${selectedCategory.name} issue (e.g., Water leaking under sink, switchboard repair, deep cleaning required)...`}
                   value={bookingForm.problemDescription}
                   onChange={(e) => setBookingForm({ ...bookingForm, problemDescription: e.target.value })}
                   required
-                  style={{
-                    width: '100%',
-                    background: '#050505',
-                    border: '1px solid #333',
-                    borderRadius: '8px',
-                    padding: '0.75rem',
-                    color: '#ffffff',
-                    outline: 'none',
-                    fontSize: '0.9rem',
-                  }}
+                  className="modal-input"
+                  style={{ resize: 'none' }}
                 />
               </div>
 
-              <h4 style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.75rem' }}>2. Customer Information & Phone</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Full Name *</label>
-                  <input type="text" value={bookingForm.fullName} onChange={(e) => setBookingForm({ ...bookingForm, fullName: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
+              {/* STEP 2: Customer Info */}
+              <div className="modal-form-step-card">
+                <div className="modal-step-title">
+                  <span>2. Customer Details</span>
                 </div>
-                <div>
-                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Phone Number *</label>
-                  <input type="tel" placeholder="+91 98765 43210" value={bookingForm.phone} onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
-                </div>
-              </div>
-
-              <h4 style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.75rem' }}>3. Service Address Snapshot</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>House / Flat / Building *</label>
-                  <input type="text" placeholder="e.g. Flat 302, Royal Apt" value={bookingForm.houseFlat} onChange={(e) => setBookingForm({ ...bookingForm, houseFlat: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Street / Area *</label>
-                  <input type="text" placeholder="e.g. Fraser Road" value={bookingForm.streetArea} onChange={(e) => setBookingForm({ ...bookingForm, streetArea: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>City *</label>
-                  <input type="text" value={bookingForm.city} onChange={(e) => setBookingForm({ ...bookingForm, city: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.8rem' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>State *</label>
-                  <input type="text" value={bookingForm.state} onChange={(e) => setBookingForm({ ...bookingForm, state: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.8rem' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Pincode *</label>
-                  <input type="text" value={bookingForm.pincode} onChange={(e) => setBookingForm({ ...bookingForm, pincode: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.8rem' }} />
+                <div className="modal-form-grid-2">
+                  <div>
+                    <label className="modal-label">Full Name *</label>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      value={bookingForm.fullName}
+                      onChange={(e) => setBookingForm({ ...bookingForm, fullName: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="modal-label">Phone Number *</label>
+                    <input
+                      type="tel"
+                      className="modal-input"
+                      placeholder="+91 98765 43210"
+                      value={bookingForm.phone}
+                      onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <h4 style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.75rem' }}>4. Schedule Date & Time Slot</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                <div>
-                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Date *</label>
-                  <input type="date" value={bookingForm.scheduledDate} onChange={(e) => setBookingForm({ ...bookingForm, scheduledDate: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.85rem' }} />
+              {/* STEP 3: Address */}
+              <div className="modal-form-step-card">
+                <div className="modal-step-title">
+                  <span>3. Service Location</span>
                 </div>
-                <div>
-                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Time Slot *</label>
-                  <select value={bookingForm.timeSlot} onChange={(e) => setBookingForm({ ...bookingForm, timeSlot: e.target.value })} style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.85rem' }}>
-                    <option value="09:00 AM - 12:00 PM">09:00 AM - 12:00 PM</option>
-                    <option value="12:00 PM - 03:00 PM">12:00 PM - 03:00 PM</option>
-                    <option value="03:00 PM - 06:00 PM">03:00 PM - 06:00 PM</option>
-                    <option value="06:00 PM - 09:00 PM">06:00 PM - 09:00 PM</option>
-                  </select>
+                <div className="modal-form-grid-2">
+                  <div>
+                    <label className="modal-label">Flat / House No. *</label>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      placeholder="e.g. Flat 302, Royal Apt"
+                      value={bookingForm.houseFlat}
+                      onChange={(e) => setBookingForm({ ...bookingForm, houseFlat: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="modal-label">Street / Landmark *</label>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      placeholder="e.g. Fraser Road"
+                      value={bookingForm.streetArea}
+                      onChange={(e) => setBookingForm({ ...bookingForm, streetArea: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="modal-form-grid-3">
+                  <div>
+                    <label className="modal-label">City *</label>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      value={bookingForm.city}
+                      onChange={(e) => setBookingForm({ ...bookingForm, city: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="modal-label">State *</label>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      value={bookingForm.state}
+                      onChange={(e) => setBookingForm({ ...bookingForm, state: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="modal-label">Pincode *</label>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      value={bookingForm.pincode}
+                      onChange={(e) => setBookingForm({ ...bookingForm, pincode: e.target.value })}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <button className="btn-gradient-full" type="submit" disabled={submittingBooking}>
-                {submittingBooking ? 'Searching Expert & Sending Request...' : `Send Request to ${selectedCategory.name} Expert ↗`}
+              {/* STEP 4: Schedule */}
+              <div className="modal-form-step-card">
+                <div className="modal-step-title">
+                  <span>4. Preferred Date & Time</span>
+                </div>
+                <div className="modal-form-grid-2">
+                  <div>
+                    <label className="modal-label">Date *</label>
+                    <input
+                      type="date"
+                      className="modal-input"
+                      value={bookingForm.scheduledDate}
+                      onChange={(e) => setBookingForm({ ...bookingForm, scheduledDate: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="modal-label">Time Slot *</label>
+                    <select
+                      className="modal-select"
+                      value={bookingForm.timeSlot}
+                      onChange={(e) => setBookingForm({ ...bookingForm, timeSlot: e.target.value })}
+                    >
+                      <option value="09:00 AM - 12:00 PM">09:00 AM - 12:00 PM</option>
+                      <option value="12:00 PM - 03:00 PM">12:00 PM - 03:00 PM</option>
+                      <option value="03:00 PM - 06:00 PM">03:00 PM - 06:00 PM</option>
+                      <option value="06:00 PM - 09:00 PM">06:00 PM - 09:00 PM</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit CTA */}
+              <button
+                className="btn-gradient-full mt-2"
+                type="submit"
+                disabled={submittingBooking}
+                style={{ padding: '0.95rem', borderRadius: '14px', fontSize: '0.95rem', fontWeight: 800 }}
+              >
+                {submittingBooking ? 'Finding Available Expert & Requesting...' : `Request ${selectedCategory.name} Expert ↗`}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* BOOKING DETAILS VIEW MODAL */}
+      {/* BOOKING DETAILS VIEW MODAL (MODERN DESIGN) */}
       {selectedBookingDetail && (
         <div className="modal-overlay">
-          <div className="modal-box glass-panel" style={{ maxWidth: '460px' }}>
-            <div className="modal-header">
-              <div className="modal-title-wrapper">
-                <FileText size={18} className="text-gradient" />
-                <span>Booking #{selectedBookingDetail._id.slice(-6).toUpperCase()}</span>
+          <div className="modal-box-modern" style={{ maxWidth: '480px' }}>
+            <div className="modal-header-modern">
+              <div className="flex items-center gap-2">
+                <FileText size={20} className="text-sky-400" />
+                <span className="font-extrabold text-white text-base">Booking #{selectedBookingDetail._id.slice(-6).toUpperCase()}</span>
               </div>
-              <button className="close-btn-modern" onClick={() => setSelectedBookingDetail(null)}><X size={18} /></button>
+              <button className="close-btn-modern" onClick={() => setSelectedBookingDetail(null)}>
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="modal-body" style={{ paddingTop: '1.25rem' }}>
-              <div style={{ marginBottom: '1rem' }}>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Service:</span>
-                <h3 style={{ color: '#ffffff', fontWeight: 700, margin: '0.1rem 0' }}>{selectedBookingDetail.serviceTitle}</h3>
-                <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '1.1rem' }}>₹{selectedBookingDetail.totalAmount} (Cash After Work)</span>
+            <div className="modal-body-modern">
+              {/* Header Info */}
+              <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/20 mb-4">
+                <span className="text-xs text-slate-400">Service Category</span>
+                <h3 className="text-lg font-bold text-white mb-1">{selectedBookingDetail.serviceTitle}</h3>
+                <span className="text-sky-400 font-extrabold text-base">₹{selectedBookingDetail.totalAmount} <span className="text-xs text-emerald-400 font-semibold">(Cash After Work)</span></span>
               </div>
 
-              <div style={{ background: 'rgba(255,255,255,0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem Description:</div>
-                <div style={{ color: '#cbd5e1' }}>"{selectedBookingDetail.problemDescription || selectedBookingDetail.notes}"</div>
+              {/* Problem Description */}
+              <div className="modal-form-step-card mb-3">
+                <span className="modal-label text-sky-400">Problem Description</span>
+                <p className="text-sm text-slate-200 mt-1">"{selectedBookingDetail.problemDescription || selectedBookingDetail.notes || 'No notes'}"</p>
               </div>
 
-              <div style={{ background: 'rgba(255,255,255,0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.85rem' }}>
-                <div style={{ marginBottom: '0.4rem', color: '#cbd5e1' }}><strong>Status:</strong> {selectedBookingDetail.status}</div>
-                <div style={{ marginBottom: '0.4rem', color: '#cbd5e1' }}><strong>Provider:</strong> {selectedBookingDetail.provider?.name || 'Assigned Expert'}</div>
-                <div style={{ marginBottom: '0.4rem', color: '#cbd5e1' }}><strong>Date & Slot:</strong> {new Date(selectedBookingDetail.scheduledDate).toLocaleDateString()} ({selectedBookingDetail.timeSlot})</div>
+              {/* Status & Provider */}
+              <div className="modal-form-step-card mb-3 text-xs space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Status:</span>
+                  <span className="font-bold text-sky-400">{selectedBookingDetail.status}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Assigned Provider:</span>
+                  <span className="font-bold text-white">{selectedBookingDetail.provider?.name || 'Assigned Expert'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Scheduled Date:</span>
+                  <span className="text-slate-200">{new Date(selectedBookingDetail.scheduledDate).toLocaleDateString()} ({selectedBookingDetail.timeSlot})</span>
+                </div>
                 {selectedBookingDetail.rejectionReason && (
-                  <div style={{ color: '#ef4444', marginTop: '0.4rem' }}><strong>Rejection Reason:</strong> {selectedBookingDetail.rejectionReason}</div>
+                  <div className="pt-2 text-red-400 border-t border-slate-800">
+                    <strong>Decline Reason:</strong> {selectedBookingDetail.rejectionReason}
+                  </div>
                 )}
               </div>
 
-              <div style={{ background: 'rgba(255,255,255,0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
-                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.3rem' }}>Service Address Snapshot:</div>
-                <div style={{ color: '#94a3b8' }}>{selectedBookingDetail.address?.fullName} ({selectedBookingDetail.address?.phone})</div>
-                <div style={{ color: '#94a3b8' }}>{selectedBookingDetail.address?.houseFlat}, {selectedBookingDetail.address?.streetArea}</div>
-                <div style={{ color: '#94a3b8' }}>{selectedBookingDetail.address?.city}, {selectedBookingDetail.address?.state} - {selectedBookingDetail.address?.pincode}</div>
+              {/* Address Snapshot */}
+              <div className="modal-form-step-card mb-4 text-xs space-y-1">
+                <span className="modal-label text-white font-bold mb-1">Service Address</span>
+                <div className="text-slate-300 font-semibold">{selectedBookingDetail.address?.fullName} ({selectedBookingDetail.address?.phone})</div>
+                <div className="text-slate-400">{selectedBookingDetail.address?.houseFlat}, {selectedBookingDetail.address?.streetArea}</div>
+                <div className="text-slate-400">{selectedBookingDetail.address?.city}, {selectedBookingDetail.address?.state} - {selectedBookingDetail.address?.pincode}</div>
               </div>
 
               {(selectedBookingDetail.status === 'PENDING' || selectedBookingDetail.status === 'ACCEPTED') && (
-                <button onClick={() => handleCancelBooking(selectedBookingDetail._id)} style={{ width: '100%', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.75rem', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>
-                  Cancel This Booking
+                <button
+                  onClick={() => handleCancelBooking(selectedBookingDetail._id)}
+                  className="w-full py-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-400 font-bold text-sm hover:bg-red-900/60 transition-colors"
+                >
+                  Cancel Booking Request
                 </button>
               )}
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

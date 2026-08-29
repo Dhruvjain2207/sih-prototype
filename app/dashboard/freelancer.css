@@ -412,3 +412,40 @@
     gap: 1rem;
   }
 }
+
+@media (max-width: 640px) {
+  .freelancer-section {
+    padding: 1.5rem 1rem 1rem;
+  }
+
+  .freelancer-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .freelancer-card {
+    padding: 1.15rem;
+  }
+
+  .freelancer-stat-box {
+    flex: 1 1 calc(50% - 0.5rem);
+    min-width: 0;
+    padding: 0.85rem;
+  }
+
+  .freelancer-stat-number {
+    font-size: 1.4rem;
+  }
+
+  .freelancer-balance-box {
+    padding: 1.25rem;
+  }
+
+  .freelancer-balance-number {
+    font-size: 2.5rem;
+  }
+
+  .freelancer-ledger-container {
+    padding: 2.5rem 1rem;
+  }
+}
+

@@ -21,6 +21,7 @@ import {
   Play,
   FileText,
   AlertCircle,
+  Menu,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './freelancer.css';
@@ -32,6 +33,8 @@ interface FreelancerDashboardProps {
 
 export default function FreelancerDashboard({ session }: FreelancerDashboardProps) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   
   // Database States
   const [bookings, setBookings] = useState<any[]>([]);
@@ -202,55 +205,190 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
             )}
           </div>
 
-          {/* User Profile */}
-          <div className="nav-icon-container">
-            <button className={`nav-icon ${activeMenu === 'profile' ? 'active' : ''}`} onClick={() => toggleMenu('profile')}>
-              <User size={20} />
+          {/* Desktop Only Navigation Items */}
+          <div className="desktop-only-nav" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {/* User Profile */}
+            <div className="nav-icon-container">
+              <button className={`nav-icon ${activeMenu === 'profile' ? 'active' : ''}`} onClick={() => toggleMenu('profile')}>
+                <User size={20} />
+              </button>
+              {activeMenu === 'profile' && (
+                <div className="dropdown-menu profile-menu glass-panel" style={{ background: '#0b1329', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                  <div className="profile-header">
+                    <div className="avatar-gradient" style={{ background: 'linear-gradient(135deg, #0284c7, #3b82f6)' }}>{userInitials}</div>
+                    <div className="profile-titles">
+                      <span className="profile-name">{session?.user?.name || 'Freelancer'}</span>
+                      <span className="text-muted text-xs">{session?.user?.email || 'No email'}</span>
+                    </div>
+                  </div>
+                  <div className="menu-divider"></div>
+                  <div className="profile-details">
+                    <div className="detail-row">
+                      <span>Role:</span>
+                      <span className="font-semibold text-xs text-sky-400 uppercase">Freelancer Pro</span>
+                    </div>
+                  </div>
+                  <div className="menu-divider"></div>
+                  <button className="action-btn danger-btn" onClick={handleLogout}>
+                    <LogOut size={14} /> Log Out
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Logout Button */}
+            <button
+              className="nav-item danger-btn"
+              onClick={handleLogout}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+            >
+              <LogOut size={16} />
+              <span>Logout</span>
             </button>
-            {activeMenu === 'profile' && (
-              <div className="dropdown-menu profile-menu glass-panel" style={{ background: '#0b1329', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
-                <div className="profile-header">
-                  <div className="avatar-gradient" style={{ background: 'linear-gradient(135deg, #0284c7, #3b82f6)' }}>{userInitials}</div>
-                  <div className="profile-titles">
-                    <span className="profile-name">{session?.user?.name || 'Freelancer'}</span>
-                    <span className="text-muted text-xs">{session?.user?.email || 'No email'}</span>
-                  </div>
-                </div>
-                <div className="menu-divider"></div>
-                <div className="profile-details">
-                  <div className="detail-row">
-                    <span>Role:</span>
-                    <span className="font-semibold text-xs text-sky-400 uppercase">Freelancer Pro</span>
-                  </div>
-                </div>
-                <div className="menu-divider"></div>
-                <button className="action-btn danger-btn" onClick={handleLogout}>
-                  <LogOut size={14} /> Log Out
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Logout Button */}
+
+          {/* Hamburger Menu Toggle Button for Mobile */}
           <button
-            className="nav-item danger-btn"
-            onClick={handleLogout}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+            className="mobile-hamburger-btn"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle Navigation Sidebar"
           >
-            <LogOut size={16} />
-            <span>Logout</span>
+            {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
       </nav>
 
+      {/* MOBILE HAMBURGER SIDEBAR / DRAWER */}
+      {isMobileMenuOpen && (
+        <div className="mobile-drawer-overlay" onClick={() => setIsMobileMenuOpen(false)}>
+          <div className="mobile-drawer-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-drawer-header">
+              <div className="mobile-drawer-title">
+                <div className="brand-logo" style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', width: '28px', height: '28px', fontSize: '1rem' }}>⚡</div>
+                <span>CoopConnect</span>
+              </div>
+              <button className="close-btn-modern" onClick={() => setIsMobileMenuOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mobile-drawer-body">
+              {/* User Profile Summary */}
+              <div className="mobile-drawer-user-card" style={{ borderColor: 'rgba(56, 189, 248, 0.25)', background: 'rgba(14, 165, 233, 0.08)' }}>
+                <div className="mobile-drawer-avatar" style={{ background: 'linear-gradient(135deg, #0284c7, #3b82f6)' }}>{userInitials}</div>
+                <div className="mobile-drawer-user-info">
+                  <div className="mobile-drawer-user-name">{session?.user?.name || 'Freelancer'}</div>
+                  <div className="mobile-drawer-user-email">{session?.user?.email || 'Freelancer Pro'}</div>
+                </div>
+              </div>
+
+              {/* Mode Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(14, 165, 233, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.85rem', color: '#38bdf8' }}>
+                <Zap size={16} />
+                <span>Mode: <strong style={{ color: '#ffffff' }}>Freelancer Pro (Active)</strong></span>
+              </div>
+
+              {/* Section Links */}
+              <div>
+                <div className="mobile-drawer-section-title">Jump to Section</div>
+                <div className="mobile-drawer-nav">
+                  <button
+                    className="mobile-drawer-item"
+                    onClick={() => {
+                      const el = document.getElementById('pending-requests-sec');
+                      el?.scrollIntoView({ behavior: 'smooth' });
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Clock size={16} /> New Booking Requests
+                    </span>
+                    {pendingRequests.length > 0 && (
+                      <span style={{ background: '#f59e0b', color: '#000', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+                        {pendingRequests.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    className="mobile-drawer-item"
+                    onClick={() => {
+                      const el = document.getElementById('active-jobs-sec');
+                      el?.scrollIntoView({ behavior: 'smooth' });
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Play size={16} /> Active Jobs
+                    </span>
+                    {activeJobs.length > 0 && (
+                      <span style={{ background: '#38bdf8', color: '#090d16', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+                        {activeJobs.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    className="mobile-drawer-item"
+                    onClick={() => {
+                      const el = document.getElementById('cooperative-ledger-sec');
+                      el?.scrollIntoView({ behavior: 'smooth' });
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <Coins size={16} /> Cooperative Ledger
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 700 }}>₹{totalCreditsEarned}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Notifications Link */}
+              <div>
+                <div className="mobile-drawer-section-title">Notifications</div>
+                <button
+                  className="mobile-drawer-item"
+                  onClick={() => {
+                    toggleMenu('notifications');
+                    if (unreadNotificationsCount > 0) handleMarkNotificationsRead();
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <Bell size={16} /> Notifications
+                  </span>
+                  {unreadNotificationsCount > 0 && (
+                    <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '10px' }}>
+                      {unreadNotificationsCount} unread
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Logout Footer Option */}
+            <div className="mobile-drawer-footer">
+              <button className="mobile-drawer-item danger-item" onClick={handleLogout}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <LogOut size={16} /> Logout from Account
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MAIN CONTENT AREA */}
       <main>
         {/* SECTION 1: NEW BOOKING REQUESTS (PENDING) */}
-        <section className="freelancer-section">
+        <section id="pending-requests-sec" className="freelancer-section">
           <div className="freelancer-section-subtitle">RIGHT NOW</div>
           <div className="freelancer-section-header">
             <h1 className="freelancer-section-title">New Booking Requests ({pendingRequests.length})</h1>
           </div>
+
 
           {pendingRequests.length === 0 ? (
             <div style={{ background: 'rgba(13, 22, 44, 0.6)', border: '1px solid rgba(56, 189, 248, 0.12)', borderRadius: '16px', padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>
@@ -309,7 +447,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
         </section>
 
         {/* SECTION 2: ACCEPTED / ACTIVE JOBS */}
-        <section className="freelancer-section" style={{ paddingTop: '1.5rem' }}>
+        <section id="active-jobs-sec" className="freelancer-section" style={{ paddingTop: '1.5rem' }}>
           <div className="freelancer-section-subtitle">ACTIVE JOBS</div>
           <h2 className="freelancer-section-title">Upcoming & In-Progress Jobs ({activeJobs.length})</h2>
 
@@ -370,7 +508,8 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
         </section>
 
         {/* SECTION 3: THE COOPERATIVE LEDGER & COMPLETED JOBS */}
-        <section className="freelancer-ledger-container">
+        <section id="cooperative-ledger-sec" className="freelancer-ledger-container">
+
           <div className="freelancer-ledger-wrapper">
             <div className="freelancer-section-subtitle">THE COOPERATIVE LEDGER</div>
 
