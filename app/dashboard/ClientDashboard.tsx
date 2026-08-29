@@ -1,22 +1,27 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
 import {
-  Search,
+  Wrench,
+  Zap,
+  Sparkles,
+  Utensils,
+  Hammer,
+  Paintbrush,
+  Wind,
+  Trees,
   MapPin,
   User,
   LogOut,
-  ShieldCheck,
-  Zap,
   Clock,
-  Sparkles,
-  ChevronRight,
-  ArrowRight,
-  Star,
-  Gift,
+  Calendar,
+  Bell,
   CheckCircle2,
   X,
-  Tag,
+  AlertCircle,
+  FileText,
+  Ban,
+  Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './client.css';
@@ -26,74 +31,139 @@ interface ClientDashboardProps {
   session: any;
 }
 
-const CURATED_SERVICES = [
+const SERVICE_CATEGORIES = [
   {
-    id: 1,
-    name: 'Plumbing Repair & Fixtures',
-    category: 'Home Maintenance',
-    price: '$35.00',
-    rating: '4.9',
-    reviews: '124 reviews',
-    img: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=600&q=80',
-    tag: 'Popular',
+    id: 'Plumbing',
+    name: 'Plumbing Repair',
+    icon: Wrench,
+    color: '#38bdf8',
+    bg: 'rgba(56, 189, 248, 0.12)',
+    price: 45,
+    desc: 'Pipe leakages, tap replacement, drain clearing, & bathroom fitting.',
   },
   {
-    id: 2,
-    name: 'Electrical Inspection & Wiring',
-    category: 'Electrical',
-    price: '$45.00',
-    rating: '4.8',
-    reviews: '98 reviews',
-    img: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=600&q=80',
-    tag: 'Verified Pros',
+    id: 'Electrician',
+    name: 'Electrical Repair',
+    icon: Zap,
+    color: '#f59e0b',
+    bg: 'rgba(245, 158, 11, 0.12)',
+    price: 50,
+    desc: 'Wiring issues, short circuits, switchboard repair, & light installations.',
   },
   {
-    id: 3,
-    name: 'Full Home Deep Cleaning',
-    category: 'Cleaning',
-    price: '$60.00',
-    rating: '5.0',
-    reviews: '210 reviews',
-    img: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=600&q=80',
-    tag: 'Top Rated',
+    id: 'House Cleaning',
+    name: 'House Cleaning',
+    icon: Sparkles,
+    color: '#a855f7',
+    bg: 'rgba(168, 85, 247, 0.12)',
+    price: 60,
+    desc: 'Deep home cleaning, bathroom sanitization, & sofa shampooing.',
   },
   {
-    id: 4,
-    name: 'AC Service & Gas Refill',
-    category: 'Appliance Care',
-    price: '$40.00',
-    rating: '4.9',
-    reviews: '312 reviews',
-    img: 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=600&q=80',
-    tag: '30% OFF',
+    id: 'Cook / Chef',
+    name: 'Cook / Chef',
+    icon: Utensils,
+    color: '#ef4444',
+    bg: 'rgba(239, 68, 68, 0.12)',
+    price: 40,
+    desc: 'Personal chef for daily home meal preparation & special dishes.',
   },
   {
-    id: 5,
-    name: 'Washing Machine Repair',
-    category: 'Appliance Care',
-    price: '$50.00',
-    rating: '4.7',
-    reviews: '85 reviews',
-    img: 'https://images.unsplash.com/photo-1626806819282-2c1dc01a5e0c?auto=format&fit=crop&w=600&q=80',
-    tag: 'Express',
+    id: 'Carpentry & Woodwork',
+    name: 'Carpentry & Woodwork',
+    icon: Hammer,
+    color: '#10b981',
+    bg: 'rgba(16, 185, 129, 0.12)',
+    price: 45,
+    desc: 'Door lock fitting, custom woodwork, & furniture assembly.',
   },
   {
-    id: 6,
-    name: 'Interior Wall Painting',
-    category: 'Painting',
-    price: '$75.00',
-    rating: '4.8',
-    reviews: '142 reviews',
-    img: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
-    tag: 'Best Value',
+    id: 'Painting & Decorating',
+    name: 'Painting & Decorating',
+    icon: Paintbrush,
+    color: '#ec4899',
+    bg: 'rgba(236, 72, 153, 0.12)',
+    price: 75,
+    desc: 'Full house interior wall painting & waterproof coating.',
+  },
+  {
+    id: 'AC & Appliance Repair',
+    name: 'AC & Appliance Care',
+    icon: Wind,
+    color: '#06b6d4',
+    bg: 'rgba(6, 182, 212, 0.12)',
+    price: 55,
+    desc: 'AC gas refill, filter cleaning, & washing machine repair.',
+  },
+  {
+    id: 'Gardening & Lawn Care',
+    name: 'Gardening & Lawn Care',
+    icon: Trees,
+    color: '#84cc16',
+    bg: 'rgba(132, 204, 22, 0.12)',
+    price: 35,
+    desc: 'Lawn trimming, weed removal, plant potting, & garden maintenance.',
   },
 ];
 
 export default function ClientDashboard({ session }: ClientDashboardProps) {
+  const [activeTab, setActiveTab] = useState<'services' | 'bookings' | 'history'>('services');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedService, setSelectedService] = useState<any>(null);
-  const [claimedPromo, setClaimedPromo] = useState<string | null>(null);
+
+  // Real Database States
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+
+  // Booking Modal States
+  const [selectedCategory, setSelectedCategory] = useState<any>(null);
+  const [selectedBookingDetail, setSelectedBookingDetail] = useState<any>(null);
+  const [submittingBooking, setSubmittingBooking] = useState(false);
+
+  // Booking Form State
+  const [bookingForm, setBookingForm] = useState({
+    problemDescription: '',
+    fullName: session?.user?.name || '',
+    phone: '',
+    houseFlat: '',
+    streetArea: '',
+    landmark: '',
+    city: 'Patna',
+    state: 'Bihar',
+    pincode: '800001',
+    instructions: '',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    timeSlot: '09:00 AM - 12:00 PM',
+  });
+
+  // Polling for live notifications and booking updates
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 4000); // 4-second poll for real-time feel
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      // 1. Fetch User Bookings
+      const bookingsRes = await fetch('/api/bookings');
+      const bookingsData = await bookingsRes.json();
+      if (bookingsData.success && bookingsData.bookings) {
+        setBookings(bookingsData.bookings);
+      }
+
+      // 2. Fetch User Notifications
+      const notifRes = await fetch('/api/notifications');
+      const notifData = await notifRes.json();
+      if (notifData.success) {
+        setNotifications(notifData.notifications || []);
+        setUnreadNotificationsCount(notifData.unreadCount || 0);
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+    }
+  };
 
   const toggleMenu = (menu: string) => setActiveMenu(activeMenu === menu ? null : menu);
 
@@ -101,18 +171,108 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     signOut({ callbackUrl: '/login' });
   };
 
-  const handleBookService = (service: any) => {
-    setSelectedService(service);
+  const handleOpenCategoryModal = (category: any) => {
+    setSelectedCategory(category);
+    setBookingForm((prev) => ({
+      ...prev,
+      fullName: session?.user?.name || prev.fullName,
+      problemDescription: '',
+    }));
   };
 
-  const handleConfirmBooking = () => {
-    toast.success(`Booking request for ${selectedService.name} placed successfully!`, { duration: 4000 });
-    setSelectedService(null);
+  const handleBookServiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!bookingForm.problemDescription.trim()) {
+      toast.error('Please enter a description of the problem or service task.');
+      return;
+    }
+
+    if (!bookingForm.fullName || !bookingForm.phone || !bookingForm.houseFlat || !bookingForm.streetArea || !bookingForm.city || !bookingForm.pincode) {
+      toast.error('Please complete all required address fields.');
+      return;
+    }
+
+    setSubmittingBooking(true);
+    const toastId = toast.loading(`Checking available ${selectedCategory.name} experts...`);
+
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: selectedCategory.id,
+          serviceTitle: selectedCategory.name,
+          problemDescription: bookingForm.problemDescription,
+          totalAmount: selectedCategory.price,
+          scheduledDate: bookingForm.scheduledDate,
+          timeSlot: bookingForm.timeSlot,
+          address: {
+            fullName: bookingForm.fullName,
+            phone: bookingForm.phone,
+            houseFlat: bookingForm.houseFlat,
+            streetArea: bookingForm.streetArea,
+            landmark: bookingForm.landmark,
+            city: bookingForm.city,
+            state: bookingForm.state,
+            pincode: bookingForm.pincode,
+            instructions: bookingForm.instructions,
+          },
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        toast.success(data.message || `Booking request sent to available ${selectedCategory.name} expert!`, { id: toastId, duration: 4500 });
+        setSelectedCategory(null);
+        fetchData();
+        setActiveTab('bookings');
+      } else {
+        toast.error(data.error || `No ${selectedCategory.name} available right now.`, { id: toastId, duration: 5000 });
+      }
+    } catch {
+      toast.error('Network error requesting booking', { id: toastId });
+    } finally {
+      setSubmittingBooking(false);
+    }
   };
 
-  const handleClaimOffer = (code: string) => {
-    setClaimedPromo(code);
-    toast.success(`Promo code ${code} applied to your account!`, { duration: 4000 });
+  const handleCancelBooking = async (bookingId: string) => {
+    const toastId = toast.loading('Cancelling booking...');
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Booking cancelled.', { id: toastId });
+        fetchData();
+        if (selectedBookingDetail?._id === bookingId) {
+          setSelectedBookingDetail(null);
+        }
+      } else {
+        toast.error(data.error || 'Failed to cancel booking', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error cancelling booking', { id: toastId });
+    }
+  };
+
+  const handleMarkNotificationsRead = async () => {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markAll: true }),
+      });
+      setUnreadNotificationsCount(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const userInitials = session?.user?.name
@@ -124,9 +284,12 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         .toUpperCase()
     : 'US';
 
-  const filteredServices = CURATED_SERVICES.filter((s) =>
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.category.toLowerCase().includes(searchQuery.toLowerCase())
+  const activeBookings = bookings.filter((b) => b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS');
+  const pastBookings = bookings.filter((b) => b.status === 'COMPLETED' || b.status === 'REJECTED' || b.status === 'CANCELLED');
+
+  const filteredCategories = SERVICE_CATEGORIES.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.desc.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -139,13 +302,58 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
             <span>CoopConnect</span>
           </div>
           <div className="nav-divider"></div>
-          <button className="nav-item location-btn" onClick={() => toggleMenu('location')}>
+          <button className="nav-item location-btn">
             <MapPin size={18} className="text-gradient" />
             <span>Patna, Bihar</span>
           </button>
         </div>
 
         <div className="nav-right">
+          {/* Notifications Bell */}
+          <div className="nav-icon-container">
+            <button
+              className={`nav-icon ${activeMenu === 'notifications' ? 'active' : ''}`}
+              onClick={() => {
+                toggleMenu('notifications');
+                if (unreadNotificationsCount > 0) handleMarkNotificationsRead();
+              }}
+            >
+              <Bell size={20} />
+              {unreadNotificationsCount > 0 && (
+                <span className="badge-count" style={{ position: 'absolute', top: '-4px', right: '-4px', background: '#ef4444', color: '#fff', fontSize: '0.65rem', padding: '0.1rem 0.35rem', borderRadius: '10px', fontWeight: 800 }}>
+                  {unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+
+            {activeMenu === 'notifications' && (
+              <div className="dropdown-menu history-menu glass-panel" style={{ width: '350px' }}>
+                <div className="menu-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Notifications</span>
+                  <button onClick={handleMarkNotificationsRead} style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '0.75rem', cursor: 'pointer' }}>Mark all read</button>
+                </div>
+
+                <div className="favorites-list" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                  {notifications.length === 0 ? (
+                    <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                      No notifications yet. Updates will appear here.
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <div key={n._id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', background: n.isRead ? 'transparent' : 'rgba(56, 189, 248, 0.08)' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: n.type === 'BOOKING_ACCEPTED' ? '#22c55e' : n.type === 'BOOKING_REJECTED' ? '#ef4444' : '#ffffff' }}>
+                          {n.title}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '0.15rem' }}>{n.message}</div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '0.3rem' }}>{new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* User Profile */}
           <div className="nav-icon-container">
             <button className={`nav-icon ${activeMenu === 'profile' ? 'active' : ''}`} onClick={() => toggleMenu('profile')}>
@@ -163,8 +371,8 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                 <div className="menu-divider"></div>
                 <div className="profile-details">
                   <div className="detail-row">
-                    <span>Role:</span>
-                    <span className="text-gradient font-semibold capitalize">{session?.user?.role || 'client'}</span>
+                    <span>Account Role:</span>
+                    <span className="text-gradient font-semibold capitalize">Customer / Client</span>
                   </div>
                 </div>
                 <div className="menu-divider"></div>
@@ -187,15 +395,15 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         </div>
       </nav>
 
-      {/* CONTAINER */}
+      {/* MAIN CONTAINER */}
       <div className="client-container">
-        {/* HERO & SEARCH BAR */}
+        {/* HERO BANNER */}
         <div className="client-hero">
           <div>
             <h1 className="client-welcome-title">
-              Welcome back, <span className="text-gradient">{session?.user?.name || 'Friend'}</span>! 👋
+              Hello, <span className="text-gradient">{session?.user?.name || 'Customer'}</span>! 👋
             </h1>
-            <p className="client-welcome-text">Find top-rated verified home service experts near you.</p>
+            <p className="client-welcome-text">Select a service, describe your problem, and connect with local experts in real time.</p>
           </div>
 
           <div className="client-search-box">
@@ -203,190 +411,411 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
             <input
               type="text"
               className="client-search-input"
-              placeholder="Search for plumbing, AC repair, cleaning..."
+              placeholder="Search for plumbing, electrician, cleaning..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
 
-        {/* FEATURE PERKS ROW */}
-        <div className="client-perks-row">
-          <div className="client-perk-pill">
-            <Zap size={16} style={{ color: '#38bdf8' }} />
-            <span>24/7 Priority Dispatch</span>
-          </div>
-          <div className="client-perk-pill">
-            <ShieldCheck size={16} style={{ color: '#22c55e' }} />
-            <span>Verified Local Pros</span>
-          </div>
-          <div className="client-perk-pill">
-            <Sparkles size={16} style={{ color: '#a855f7' }} />
-            <span>100% Quality Guaranteed</span>
-          </div>
-          <div className="client-perk-pill">
-            <Clock size={16} style={{ color: '#f59e0b' }} />
-            <span>Under 30-Min Emergency Arrival</span>
-          </div>
-        </div>
-
-        {/* PROMOTIONAL ADS BANNERS SECTION */}
-        <section className="client-ads-section">
-          <div className="client-ads-grid">
-            {/* Main Featured Banner */}
-            <div className="client-main-ad">
-              <span className="client-ad-tag">🔥 Featured Offer</span>
-              <h2 className="client-ad-heading">Summer Special: Up to 30% OFF Home Deep Cleaning</h2>
-              <p className="client-ad-desc">
-                Book certified hygiene experts for your home or office. Use promo code <strong>SUMMER30</strong> at checkout.
-              </p>
-              <button className="client-ad-btn" onClick={() => handleClaimOffer('SUMMER30')}>
-                {claimedPromo === 'SUMMER30' ? '✓ Promo Code Applied!' : 'Claim 30% Discount ↗'}
-              </button>
-            </div>
-
-            {/* Side Advertisements */}
-            <div className="client-side-ads">
-              <div className="client-mini-ad">
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-                    <Tag size={14} /> EXPRESS REPAIRS
-                  </div>
-                  <h3 className="client-mini-ad-title">Emergency Plumbing & Electrical</h3>
-                  <p className="client-mini-ad-desc">Instant dispatch within 30 mins with zero cancellation fees.</p>
-                </div>
-                <a href="#services" className="client-mini-ad-link">
-                  Browse Express Pros <ChevronRight size={14} />
-                </a>
-              </div>
-
-              <div className="client-mini-ad" style={{ background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.8), rgba(15, 23, 42, 0.9))' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#a855f7', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-                    <Gift size={14} /> REWARDS CLUB
-                  </div>
-                  <h3 className="client-mini-ad-title">CoopConnect Pass</h3>
-                  <p className="client-mini-ad-desc">Get unlimited zero-fee bookings & priority slots for $9/mo.</p>
-                </div>
-                <button
-                  onClick={() => toast.success('CoopConnect Pass membership coming soon!')}
-                  style={{ background: 'none', border: 'none', padding: 0, color: '#c084fc', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-                >
-                  Join Pass Membership <ArrowRight size={14} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* CURATED SERVICES GRID SECTION */}
-        <section className="client-services-section" id="services">
-          <div className="client-section-title-row">
-            <div>
-              <h2 className="client-section-h2">Curated Services Near You</h2>
-              <p className="client-section-sub">Select a category or book a verified expert directly.</p>
-            </div>
-            <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Showing {filteredServices.length} popular services</span>
-          </div>
-
-          <div className="client-services-grid">
-            {filteredServices.map((service) => (
-              <div key={service.id} className="client-service-card" onClick={() => handleBookService(service)}>
-                <div className="client-service-img-wrapper">
-                  <img src={service.img} alt={service.name} className="client-service-img" />
-                  <span style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(15, 23, 42, 0.85)', color: '#38bdf8', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700 }}>
-                    {service.tag}
-                  </span>
-                </div>
-
-                <div className="client-service-content">
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 600, textTransform: 'uppercase' }}>{service.category}</span>
-                    <h3 className="client-service-name">{service.name}</h3>
-                  </div>
-
-                  <div>
-                    <div className="client-service-meta">
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#f59e0b', fontWeight: 700 }}>
-                        <Star size={14} fill="#f59e0b" /> {service.rating} <span style={{ color: '#64748b', fontWeight: 400 }}>({service.reviews})</span>
-                      </span>
-                      <span className="client-service-price">{service.price}</span>
-                    </div>
-
-                    <button className="client-book-btn">Book Service Instant ↗</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* BOTTOM PROMOTIONAL BANNER */}
-        <div className="client-promo-banner">
-          <div className="client-promo-info">
-            <h3>Invite a Neighbor, Earn $20 Account Credit 🎁</h3>
-            <p>Share your invite code with friends and family to unlock service discounts.</p>
-          </div>
+        {/* NAVIGATION TABS */}
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
           <button
-            onClick={() => toast.success('Your referral link copied to clipboard!')}
+            onClick={() => setActiveTab('services')}
             style={{
-              background: '#38bdf8',
-              color: '#090d16',
-              fontWeight: 700,
-              padding: '0.75rem 1.5rem',
-              borderRadius: '12px',
+              background: activeTab === 'services' ? '#6366f1' : 'transparent',
+              color: activeTab === 'services' ? '#ffffff' : '#94a3b8',
               border: 'none',
-              cursor: 'pointer',
+              padding: '0.6rem 1.25rem',
+              borderRadius: '10px',
+              fontWeight: 700,
               fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
             }}
           >
-            Copy Invite Link
+            <Wrench size={16} /> Select & Book Service
+          </button>
+
+          <button
+            onClick={() => setActiveTab('bookings')}
+            style={{
+              background: activeTab === 'bookings' ? '#6366f1' : 'transparent',
+              color: activeTab === 'bookings' ? '#ffffff' : '#94a3b8',
+              border: 'none',
+              padding: '0.6rem 1.25rem',
+              borderRadius: '10px',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <Calendar size={16} /> Active Bookings
+            {activeBookings.length > 0 && (
+              <span style={{ background: '#38bdf8', color: '#090d16', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '10px' }}>
+                {activeBookings.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            style={{
+              background: activeTab === 'history' ? '#6366f1' : 'transparent',
+              color: activeTab === 'history' ? '#ffffff' : '#94a3b8',
+              border: 'none',
+              padding: '0.6rem 1.25rem',
+              borderRadius: '10px',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <Clock size={16} /> Past History ({pastBookings.length})
           </button>
         </div>
+
+        {/* TAB 1: SERVICE CATEGORIES SELECTION */}
+        {activeTab === 'services' && (
+          <section className="client-services-section">
+            <div className="client-section-title-row">
+              <div>
+                <h2 className="client-section-h2">Available Service Categories</h2>
+                <p className="client-section-sub">Choose a category to describe your problem and request an expert.</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+              {filteredCategories.map((cat) => {
+                const IconComponent = cat.icon;
+                return (
+                  <div
+                    key={cat.id}
+                    onClick={() => handleOpenCategoryModal(cat)}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '16px',
+                      padding: '1.5rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                    }}
+                    className="client-service-card"
+                  >
+                    <div>
+                      <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: cat.bg, color: cat.color, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
+                        <IconComponent size={24} />
+                      </div>
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.4rem' }}>{cat.name}</h3>
+                      <p style={{ fontSize: '0.85rem', color: '#94a3b8', lineHeight: 1.4, margin: 0 }}>{cat.desc}</p>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '0.85rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#38bdf8' }}>₹{cat.price} <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 400 }}>(Cash)</span></span>
+                      <button style={{ background: '#6366f1', color: '#ffffff', border: 'none', padding: '0.45rem 0.9rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
+                        Book Now ↗
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* TAB 2: ACTIVE & UPCOMING BOOKINGS */}
+        {activeTab === 'bookings' && (
+          <section className="client-services-section">
+            <h2 className="client-section-h2" style={{ marginBottom: '1.25rem' }}>Active & Upcoming Requests</h2>
+
+            {activeBookings.length === 0 ? (
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '3rem', textAlign: 'center' }}>
+                <Calendar size={48} style={{ color: '#64748b', margin: '0 auto 1rem' }} />
+                <h3 style={{ color: '#ffffff', fontWeight: 700, marginBottom: '0.5rem' }}>No Active Requests</h3>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>You don't have any pending or accepted bookings.</p>
+                <button onClick={() => setActiveTab('services')} className="btn-gradient-full" style={{ width: 'auto', padding: '0.75rem 2rem' }}>
+                  Select & Book a Service ↗
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '1.25rem' }}>
+                {activeBookings.map((b) => (
+                  <div key={b._id} style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>{b.serviceTitle}</h3>
+                          <span style={{
+                            background: b.status === 'ACCEPTED' ? 'rgba(34, 197, 94, 0.15)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                            color: b.status === 'ACCEPTED' ? '#22c55e' : b.status === 'IN_PROGRESS' ? '#38bdf8' : '#f59e0b',
+                            border: `1px solid ${b.status === 'ACCEPTED' ? 'rgba(34, 197, 94, 0.3)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 800,
+                          }}>
+                            {b.status === 'PENDING' ? '⏳ PENDING (Awaiting Freelancer Accept)' : b.status === 'ACCEPTED' ? '✓ ACCEPTED BY FREELANCER' : '🛠️ IN PROGRESS'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                          Assigned Freelancer: <strong style={{ color: '#ffffff' }}>{b.provider?.name || 'Assigned Expert'}</strong> ({b.provider?.phone || 'Contact via message'})
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8' }}>₹{b.totalAmount}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>💵 Cash Payment After Work</div>
+                      </div>
+                    </div>
+
+                    {/* Problem Description Box */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', margin: '0.85rem 0', fontSize: '0.85rem' }}>
+                      <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem Description:</div>
+                      <div style={{ color: '#cbd5e1' }}>"{b.problemDescription || b.notes || 'No description provided'}"</div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.5rem' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                        📅 Date: {new Date(b.scheduledDate).toLocaleDateString()} ({b.timeSlot}) · 📍 {b.address?.houseFlat}, {b.address?.streetArea}, {b.address?.city}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        <button onClick={() => setSelectedBookingDetail(b)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                          View Details
+                        </button>
+                        {(b.status === 'PENDING' || b.status === 'ACCEPTED') && (
+                          <button onClick={() => handleCancelBooking(b._id)} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                            Cancel Request
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB 3: PAST HISTORY */}
+        {activeTab === 'history' && (
+          <section className="client-services-section">
+            <h2 className="client-section-h2" style={{ marginBottom: '1.25rem' }}>Past Booking History</h2>
+
+            {pastBookings.length === 0 ? (
+              <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '3rem', textAlign: 'center' }}>
+                <Clock size={48} style={{ color: '#64748b', margin: '0 auto 1rem' }} />
+                <h3 style={{ color: '#ffffff', fontWeight: 700, marginBottom: '0.5rem' }}>No Past History</h3>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Completed, declined, or cancelled requests will appear here.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                {pastBookings.map((b) => (
+                  <div key={b._id} style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '1.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '1rem' }}>{b.serviceTitle}</div>
+                      <span style={{
+                        background: b.status === 'COMPLETED' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: b.status === 'COMPLETED' ? '#22c55e' : '#ef4444',
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '10px',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                      }}>
+                        {b.status}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                      Provider: {b.provider?.name || 'Assigned Expert'} · Date: {new Date(b.scheduledDate).toLocaleDateString()}
+                    </div>
+
+                    {b.problemDescription && (
+                      <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '0.4rem', fontStyle: 'italic' }}>
+                        Problem: "{b.problemDescription}"
+                      </div>
+                    )}
+
+                    {b.status === 'REJECTED' && b.rejectionReason && (
+                      <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.4rem 0.75rem', borderRadius: '6px' }}>
+                        <strong>Declined Reason:</strong> {b.rejectionReason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
-      {/* BOOKING MODAL */}
-      {selectedService && (
+      {/* BOOKING MODAL (PROBLEM DESCRIPTION & ADDRESS ENTRY) */}
+      {selectedCategory && (
         <div className="modal-overlay">
-          <div className="modal-box glass-panel" style={{ maxWidth: '440px' }}>
+          <div className="modal-box glass-panel" style={{ maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-header">
               <div className="modal-title-wrapper">
                 <CheckCircle2 size={20} className="text-gradient" />
-                <span>Book {selectedService.name}</span>
+                <span>Book {selectedCategory.name}</span>
               </div>
-              <button className="close-btn-modern" onClick={() => setSelectedService(null)}><X size={18} /></button>
+              <button className="close-btn-modern" onClick={() => setSelectedCategory(null)}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleBookServiceSubmit} className="modal-body" style={{ paddingTop: '1.25rem' }}>
+              <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.85rem 1rem', borderRadius: '10px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Est. Service Fee:</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#38bdf8' }}>₹{selectedCategory.price}</div>
+                </div>
+                <span style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '0.25rem 0.6rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700 }}>
+                  💵 Pay Cash After Work
+                </span>
+              </div>
+
+              {/* Problem Description Input */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.85rem', color: '#ffffff', fontWeight: 700, marginBottom: '0.35rem', display: 'block' }}>
+                  1. Problem / Task Description *
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={`Describe your ${selectedCategory.name} requirement in detail (e.g. Kitchen tap leaking, switchboard short circuit, room deep cleaning needed)...`}
+                  value={bookingForm.problemDescription}
+                  onChange={(e) => setBookingForm({ ...bookingForm, problemDescription: e.target.value })}
+                  required
+                  style={{
+                    width: '100%',
+                    background: '#050505',
+                    border: '1px solid #333',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    color: '#ffffff',
+                    outline: 'none',
+                    fontSize: '0.9rem',
+                  }}
+                />
+              </div>
+
+              <h4 style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.75rem' }}>2. Customer Information & Phone</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Full Name *</label>
+                  <input type="text" value={bookingForm.fullName} onChange={(e) => setBookingForm({ ...bookingForm, fullName: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Phone Number *</label>
+                  <input type="tel" placeholder="+91 98765 43210" value={bookingForm.phone} onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
+                </div>
+              </div>
+
+              <h4 style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.75rem' }}>3. Service Address Snapshot</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>House / Flat / Building *</label>
+                  <input type="text" placeholder="e.g. Flat 302, Royal Apt" value={bookingForm.houseFlat} onChange={(e) => setBookingForm({ ...bookingForm, houseFlat: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Street / Area *</label>
+                  <input type="text" placeholder="e.g. Fraser Road" value={bookingForm.streetArea} onChange={(e) => setBookingForm({ ...bookingForm, streetArea: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.6rem', color: '#fff', fontSize: '0.85rem' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>City *</label>
+                  <input type="text" value={bookingForm.city} onChange={(e) => setBookingForm({ ...bookingForm, city: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.8rem' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>State *</label>
+                  <input type="text" value={bookingForm.state} onChange={(e) => setBookingForm({ ...bookingForm, state: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.8rem' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Pincode *</label>
+                  <input type="text" value={bookingForm.pincode} onChange={(e) => setBookingForm({ ...bookingForm, pincode: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.8rem' }} />
+                </div>
+              </div>
+
+              <h4 style={{ color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.75rem' }}>4. Schedule Date & Time Slot</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Date *</label>
+                  <input type="date" value={bookingForm.scheduledDate} onChange={(e) => setBookingForm({ ...bookingForm, scheduledDate: e.target.value })} required style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.85rem' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '0.2rem', display: 'block' }}>Time Slot *</label>
+                  <select value={bookingForm.timeSlot} onChange={(e) => setBookingForm({ ...bookingForm, timeSlot: e.target.value })} style={{ width: '100%', background: '#050505', border: '1px solid #333', borderRadius: '6px', padding: '0.5rem', color: '#fff', fontSize: '0.85rem' }}>
+                    <option value="09:00 AM - 12:00 PM">09:00 AM - 12:00 PM</option>
+                    <option value="12:00 PM - 03:00 PM">12:00 PM - 03:00 PM</option>
+                    <option value="03:00 PM - 06:00 PM">03:00 PM - 06:00 PM</option>
+                    <option value="06:00 PM - 09:00 PM">06:00 PM - 09:00 PM</option>
+                  </select>
+                </div>
+              </div>
+
+              <button className="btn-gradient-full" type="submit" disabled={submittingBooking}>
+                {submittingBooking ? 'Searching Expert & Sending Request...' : `Send Request to ${selectedCategory.name} Expert ↗`}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* BOOKING DETAILS VIEW MODAL */}
+      {selectedBookingDetail && (
+        <div className="modal-overlay">
+          <div className="modal-box glass-panel" style={{ maxWidth: '460px' }}>
+            <div className="modal-header">
+              <div className="modal-title-wrapper">
+                <FileText size={18} className="text-gradient" />
+                <span>Booking #{selectedBookingDetail._id.slice(-6).toUpperCase()}</span>
+              </div>
+              <button className="close-btn-modern" onClick={() => setSelectedBookingDetail(null)}><X size={18} /></button>
             </div>
 
             <div className="modal-body" style={{ paddingTop: '1.25rem' }}>
-              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', alignItems: 'center' }}>
-                <img src={selectedService.img} alt="" style={{ width: '64px', height: '64px', borderRadius: '12px', objectFit: 'cover' }} />
-                <div>
-                  <h4 style={{ color: '#ffffff', fontWeight: 700, margin: 0 }}>{selectedService.name}</h4>
-                  <span className="text-xs text-muted">{selectedService.category} · ⭐ {selectedService.rating}</span>
-                  <div style={{ color: '#38bdf8', fontWeight: 800, fontSize: '1.1rem', marginTop: '0.2rem' }}>{selectedService.price}</div>
-                </div>
+              <div style={{ marginBottom: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Service:</span>
+                <h3 style={{ color: '#ffffff', fontWeight: 700, margin: '0.1rem 0' }}>{selectedBookingDetail.serviceTitle}</h3>
+                <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '1.1rem' }}>₹{selectedBookingDetail.totalAmount} (Cash After Work)</span>
               </div>
 
-              <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                  <span style={{ color: '#94a3b8' }}>Service Fee:</span>
-                  <span style={{ color: '#ffffff', fontWeight: 600 }}>{selectedService.price}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                  <span style={{ color: '#94a3b8' }}>Est. Arrival:</span>
-                  <span style={{ color: '#22c55e', fontWeight: 600 }}>Under 30 Mins</span>
-                </div>
-                {claimedPromo && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#38bdf8' }}>
-                    <span>Promo ({claimedPromo}):</span>
-                    <span>-30% Applied</span>
-                  </div>
+              <div style={{ background: 'rgba(255,255,255,0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem Description:</div>
+                <div style={{ color: '#cbd5e1' }}>"{selectedBookingDetail.problemDescription || selectedBookingDetail.notes}"</div>
+              </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <div style={{ marginBottom: '0.4rem', color: '#cbd5e1' }}><strong>Status:</strong> {selectedBookingDetail.status}</div>
+                <div style={{ marginBottom: '0.4rem', color: '#cbd5e1' }}><strong>Provider:</strong> {selectedBookingDetail.provider?.name || 'Assigned Expert'}</div>
+                <div style={{ marginBottom: '0.4rem', color: '#cbd5e1' }}><strong>Date & Slot:</strong> {new Date(selectedBookingDetail.scheduledDate).toLocaleDateString()} ({selectedBookingDetail.timeSlot})</div>
+                {selectedBookingDetail.rejectionReason && (
+                  <div style={{ color: '#ef4444', marginTop: '0.4rem' }}><strong>Rejection Reason:</strong> {selectedBookingDetail.rejectionReason}</div>
                 )}
               </div>
 
-              <button className="btn-gradient-full" onClick={handleConfirmBooking}>
-                Confirm & Request Service ↗
-              </button>
+              <div style={{ background: 'rgba(255,255,255,0.04)', padding: '0.85rem', borderRadius: '10px', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.3rem' }}>Service Address Snapshot:</div>
+                <div style={{ color: '#94a3b8' }}>{selectedBookingDetail.address?.fullName} ({selectedBookingDetail.address?.phone})</div>
+                <div style={{ color: '#94a3b8' }}>{selectedBookingDetail.address?.houseFlat}, {selectedBookingDetail.address?.streetArea}</div>
+                <div style={{ color: '#94a3b8' }}>{selectedBookingDetail.address?.city}, {selectedBookingDetail.address?.state} - {selectedBookingDetail.address?.pincode}</div>
+              </div>
+
+              {(selectedBookingDetail.status === 'PENDING' || selectedBookingDetail.status === 'ACCEPTED') && (
+                <button onClick={() => handleCancelBooking(selectedBookingDetail._id)} style={{ width: '100%', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.75rem', borderRadius: '10px', fontWeight: 700, cursor: 'pointer' }}>
+                  Cancel This Booking
+                </button>
+              )}
             </div>
           </div>
         </div>

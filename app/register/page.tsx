@@ -324,14 +324,34 @@ export default function Register() {
                       </div>
 
                       <div className={styles['input-group']}>
-                        <label>Primary Skills / Specialization (comma separated)</label>
+                        <label>Primary Work Specialization</label>
                         <div className={styles['input-wrapper']}>
-                          <input
-                            type="text"
-                            placeholder="e.g. Plumbing, Electrical, Cleaning"
+                          <select
                             value={skills}
                             onChange={(e) => setSkills(e.target.value)}
-                          />
+                            required
+                            style={{
+                              width: '100%',
+                              backgroundColor: '#050505',
+                              border: '1px solid #333',
+                              color: '#fff',
+                              padding: '0.9rem 1rem',
+                              borderRadius: '8px',
+                              fontSize: '0.95rem',
+                              outline: 'none',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <option value="" disabled>Select Work Specialization...</option>
+                            <option value="Plumbing">Plumbing</option>
+                            <option value="Electrician">Electrician</option>
+                            <option value="House Cleaning">House Cleaning</option>
+                            <option value="Cook / Chef">Cook / Chef</option>
+                            <option value="Carpentry & Woodwork">Carpentry & Woodwork</option>
+                            <option value="Painting & Decorating">Painting & Decorating</option>
+                            <option value="AC & Appliance Repair">AC & Appliance Repair</option>
+                            <option value="Gardening & Lawn Care">Gardening & Lawn Care</option>
+                          </select>
                         </div>
                       </div>
 

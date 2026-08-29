@@ -93,6 +93,59 @@
     line-height: 1.4;
 }
 
+/* Role Selector Tabs */
+.role-selector {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.role-card {
+    flex: 1;
+    background-color: #121214;
+    border: 1.5px solid #2a2a2e;
+    border-radius: 10px;
+    padding: 0.85rem 0.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+}
+
+.role-card:hover {
+    border-color: #5e43f3;
+    background-color: #18181c;
+}
+
+.role-card.active {
+    border-color: #5e43f3;
+    background-color: rgba(94, 67, 243, 0.12);
+    box-shadow: 0 0 12px rgba(94, 67, 243, 0.25);
+}
+
+.role-icon {
+    font-size: 1.35rem;
+}
+
+.role-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.role-subtitle {
+    font-size: 0.7rem;
+    color: #888888;
+}
+
+.role-card.active .role-subtitle {
+    color: #a797ff;
+}
+
 /* Social Buttons */
 .social-buttons-container {
     display: flex;
