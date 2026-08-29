@@ -441,11 +441,27 @@
   }
 
   .freelancer-balance-number {
-    font-size: 2.5rem;
+    font-size: 2.2rem;
   }
 
   .freelancer-ledger-container {
-    padding: 2.5rem 1rem;
+    padding: 2rem 1rem;
   }
 }
+
+@media (max-width: 480px) {
+  .freelancer-section-title {
+    font-size: 1.3rem;
+    line-height: 1.3;
+  }
+
+  .freelancer-balance-number {
+    font-size: 1.85rem;
+  }
+
+  .freelancer-card-title {
+    font-size: 0.95rem;
+  }
+}
+
 

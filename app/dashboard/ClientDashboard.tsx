@@ -329,25 +329,55 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
             </button>
 
             {activeMenu === 'notifications' && (
-              <div className="dropdown-menu history-menu glass-panel" style={{ width: '350px' }}>
-                <div className="menu-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Notifications</span>
-                  <button onClick={handleMarkNotificationsRead} style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '0.75rem', cursor: 'pointer' }}>Mark all read</button>
+              <div className="dropdown-menu-responsive">
+                <div style={{ padding: '1rem 1.25rem', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Bell size={16} className="text-sky-400" /> Notifications
+                  </div>
+                  <button onClick={handleMarkNotificationsRead} style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Mark all read</button>
                 </div>
 
-                <div className="favorites-list" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                <div style={{ maxHeight: '320px', overflowY: 'auto', padding: '0.5rem' }}>
                   {notifications.length === 0 ? (
-                    <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                    <div style={{ padding: '2rem 1.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                      <Bell size={32} style={{ color: '#475569', margin: '0 auto 0.5rem' }} />
                       No notifications yet. Updates will appear here.
                     </div>
                   ) : (
                     notifications.map((n) => (
-                      <div key={n._id} style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', background: n.isRead ? 'transparent' : 'rgba(56, 189, 248, 0.08)' }}>
-                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: n.type === 'BOOKING_ACCEPTED' ? '#22c55e' : n.type === 'BOOKING_REJECTED' ? '#ef4444' : '#ffffff' }}>
-                          {n.title}
+                      <div
+                        key={n._id}
+                        style={{
+                          padding: '0.85rem 1rem',
+                          borderRadius: '12px',
+                          marginBottom: '0.4rem',
+                          background: n.isRead ? 'rgba(255,255,255,0.02)' : 'rgba(56, 189, 248, 0.08)',
+                          border: `1px solid ${n.isRead ? 'rgba(255,255,255,0.05)' : 'rgba(56, 189, 248, 0.2)'}`,
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '0.75rem',
+                        }}
+                      >
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          background: n.type === 'BOOKING_ACCEPTED' ? 'rgba(34, 197, 94, 0.15)' : n.type === 'BOOKING_REJECTED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                          color: n.type === 'BOOKING_ACCEPTED' ? '#22c55e' : n.type === 'BOOKING_REJECTED' ? '#ef4444' : '#38bdf8',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}>
+                          {n.type === 'BOOKING_ACCEPTED' ? <CheckCircle2 size={16} /> : n.type === 'BOOKING_REJECTED' ? <Ban size={16} /> : <AlertCircle size={16} />}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '0.15rem' }}>{n.message}</div>
-                        <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '0.3rem' }}>{new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: n.type === 'BOOKING_ACCEPTED' ? '#22c55e' : n.type === 'BOOKING_REJECTED' ? '#ef4444' : '#ffffff' }}>
+                            {n.title}
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#cbd5e1', marginTop: '0.2rem', lineHeight: 1.4 }}>{n.message}</div>
+                          <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '0.35rem' }}>{new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
                       </div>
                     ))
                   )}

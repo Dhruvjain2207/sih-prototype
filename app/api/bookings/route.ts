@@ -28,12 +28,48 @@ export async function GET() {
 
     let bookings;
     if (userRole === "freelancer") {
-      bookings = await Booking.find({
+      // Get freelancer's skills array
+      const userSkills: string[] = dbUser?.skills && dbUser.skills.length > 0 ? dbUser.skills : [];
+
+      // Build category regex matching rules
+      const skillRegexes = userSkills.map(
+        (skill) => new RegExp(skill.replace(/[^a-zA-Z0-9]/g, ".*"), "i")
+      );
+
+      // Query 1: Pending jobs matching this freelancer's category skills
+      const pendingMatchQuery: any = { status: "PENDING" };
+      if (skillRegexes.length > 0) {
+        pendingMatchQuery.$or = [
+          { category: { $in: skillRegexes } },
+          { serviceTitle: { $in: skillRegexes } },
+        ];
+      }
+
+      // Query 2: Jobs accepted/completed by THIS specific freelancer
+      const myJobsQuery: any = {
         $or: [{ provider: userId }, { provider: session.user.id }],
-      })
-        .populate("client", "name email phone image")
-        .populate("gig")
-        .sort({ createdAt: -1 });
+        status: { $ne: "PENDING" },
+      };
+
+      const [pendingBookings, myAcceptedBookings] = await Promise.all([
+        Booking.find(pendingMatchQuery)
+          .populate("client", "name email phone image")
+          .populate("gig")
+          .sort({ createdAt: -1 }),
+        Booking.find(myJobsQuery)
+          .populate("client", "name email phone image")
+          .populate("gig")
+          .sort({ createdAt: -1 }),
+      ]);
+
+      // Combine both lists (avoiding duplicates)
+      const bookingMap = new Map();
+      pendingBookings.forEach((b) => bookingMap.set(b._id.toString(), b));
+      myAcceptedBookings.forEach((b) => bookingMap.set(b._id.toString(), b));
+
+      bookings = Array.from(bookingMap.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     } else {
       bookings = await Booking.find({
         $or: [{ client: userId }, { client: session.user.id }],
@@ -50,7 +86,7 @@ export async function GET() {
   }
 }
 
-// POST /api/bookings - Create new booking with skill matching & problem description
+// POST /api/bookings - Create new booking for a category
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -85,7 +121,7 @@ export async function POST(req: Request) {
 
     await connectToDatabase();
 
-    // Find or create DB Client user to ensure a valid ObjectId reference
+    // Find or create DB Client user
     let dbClient = null;
     if (session.user.email) {
       dbClient = await User.findOne({ email: session.user.email.toLowerCase().trim() });
@@ -104,45 +140,29 @@ export async function POST(req: Request) {
     }
 
     const clientId = dbClient._id;
-
     const targetCategory = requestedCategory || "Plumbing";
     const finalServiceTitle = requestedTitle || `${targetCategory} Service`;
     const finalPrice = totalAmount || 45;
 
-    // 1. Skill-Based Freelancer Lookup
-    let matchingFreelancer = await User.findOne({
+    // 1. Find ALL Freelancers matching this specific category skill
+    const categoryKeyword = targetCategory.split(" ")[0].replace(/[^a-zA-Z]/g, "");
+    let matchingFreelancers = await User.find({
       role: "freelancer",
-      skills: { $elemMatch: { $regex: new RegExp(targetCategory.replace(/[^a-zA-Z]/g, ""), "i") } },
+      skills: { $elemMatch: { $regex: new RegExp(categoryKeyword, "i") } },
     });
 
-    if (!matchingFreelancer) {
-      matchingFreelancer = await User.findOne({
-        role: "freelancer",
-        skills: { $elemMatch: { $regex: new RegExp(targetCategory.split(" ")[0], "i") } },
-      });
+    if (!matchingFreelancers || matchingFreelancers.length === 0) {
+      matchingFreelancers = await User.find({ role: "freelancer" });
     }
 
-    if (!matchingFreelancer) {
-      matchingFreelancer = await User.findOne({ role: "freelancer" });
-    }
-
-    if (!matchingFreelancer) {
-      return NextResponse.json(
-        { error: `No ${targetCategory} professional is available right now. Please try again later or register as a freelancer with this skill.` },
-        { status: 404 }
-      );
-    }
-
-    const finalProviderId = matchingFreelancer._id;
-
-    // 2. Create Booking in Database with PENDING status
+    // 2. Create Booking in Database with PENDING status & unassigned provider
     const newBooking = await Booking.create({
       gig: gigId || undefined,
       category: targetCategory,
       serviceTitle: finalServiceTitle,
       problemDescription: problemDescription.trim(),
       client: clientId,
-      provider: finalProviderId,
+      provider: matchingFreelancers.length === 1 ? matchingFreelancers[0]._id : undefined,
       status: "PENDING",
       totalAmount: finalPrice,
       paymentMethod: "CASH_AFTER_WORK",
@@ -162,17 +182,20 @@ export async function POST(req: Request) {
       notes: problemDescription.trim(),
     });
 
-    // 3. Create Notification for Freelancer
+    // 3. Notify all matching category freelancers
     const clientName = dbClient.name || session.user.name || "A customer";
-    await Notification.create({
-      recipient: finalProviderId,
-      sender: clientId,
-      type: "NEW_BOOKING",
-      title: `New Request: ${finalServiceTitle}`,
-      message: `${clientName} requested ${targetCategory} service on ${new Date(scheduledDate).toLocaleDateString()} (${timeSlot}). Problem: "${problemDescription.trim().slice(0, 60)}..."`,
-      booking: newBooking._id,
-      isRead: false,
-    });
+    const notificationPromises = matchingFreelancers.map((fl) =>
+      Notification.create({
+        recipient: fl._id,
+        sender: clientId,
+        type: "NEW_BOOKING",
+        title: `New Request: ${finalServiceTitle}`,
+        message: `${clientName} requested ${targetCategory} service on ${new Date(scheduledDate).toLocaleDateString()} (${timeSlot}). Problem: "${problemDescription.trim().slice(0, 60)}..."`,
+        booking: newBooking._id,
+        isRead: false,
+      })
+    );
+    await Promise.all(notificationPromises);
 
     const populatedBooking = await Booking.findById(newBooking._id)
       .populate("provider", "name email phone image rating skills")
@@ -180,7 +203,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Booking request sent to ${matchingFreelancer.name} (${targetCategory} Specialist)!`,
+      message: `Booking request dispatched to available ${targetCategory} experts!`,
       booking: populatedBooking,
     });
   } catch (error: any) {

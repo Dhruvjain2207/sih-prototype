@@ -126,22 +126,25 @@ export async function PATCH(
       });
 
     } else if (requestedStatus === "ACCEPTED") {
-      if (!isProvider) {
-        return NextResponse.json({ error: "Only the assigned service provider can accept this booking." }, { status: 403 });
-      }
       if (currentStatus !== "PENDING") {
-        return NextResponse.json({ error: `Cannot accept a booking that is ${currentStatus}` }, { status: 400 });
+        return NextResponse.json(
+          { error: "This booking request has already been claimed by another service expert." },
+          { status: 400 }
+        );
       }
+      const acceptingUserId = userMongoId || sessionUserId;
       booking.status = "ACCEPTED";
+      booking.provider = acceptingUserId; // Claim booking for accepting freelancer
       booking.acceptedAt = new Date();
 
-      // Notify Client
+      // Notify Client with accepting freelancer's name
+      const providerName = dbUser?.name || session.user.name || "A service expert";
       await Notification.create({
         recipient: booking.client,
-        sender: sessionUserId,
+        sender: acceptingUserId,
         type: "BOOKING_ACCEPTED",
         title: "Booking Accepted! 🎉",
-        message: `Your booking for "${booking.serviceTitle}" has been accepted by the service provider.`,
+        message: `Your booking for "${booking.serviceTitle}" was accepted by ${providerName}.`,
         booking: booking._id,
       });
 

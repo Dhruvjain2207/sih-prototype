@@ -81,7 +81,7 @@ const BookingSchema = new Schema<IBooking>(
     provider: {
       type: Schema.Types.Mixed,
       ref: "User",
-      required: [true, "Provider ID is required"],
+      required: false,
     },
     status: {
       type: String,
