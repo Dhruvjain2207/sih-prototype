@@ -1,4 +1,4 @@
-/// <reference types="vite/client" />
+'use client'
 import React, { useState } from 'react';
 import {
   MapPin,
