@@ -108,18 +108,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return true;
     },
-    async jwt({ token, user, account }) {
-      if (account || user) {
-        await connectToDatabase();
-        const dbUser = await User.findOne({ email: token.email?.toLowerCase().trim() });
-        if (dbUser) {
-          token.id = dbUser._id.toString();
-          token.role = dbUser.role;
-          token.isVerified = dbUser.isVerified;
-        } else if (user) {
-          token.id = user.id;
-          token.role = user.role;
-          token.isVerified = user.isVerified ?? true;
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.isVerified = user.isVerified ?? true;
+      } else if (!token.id && token.email) {
+        try {
+          await connectToDatabase();
+          const email = token.email.toLowerCase().trim();
+          const dbUser = await User.findOne({ email }).lean();
+          if (dbUser) {
+            token.id = (dbUser._id as { toString(): string }).toString();
+            token.role = dbUser.role;
+            token.isVerified = dbUser.isVerified;
+          }
+        } catch (err) {
+          console.error("[Auth JWT Error]", err);
         }
       }
       return token;

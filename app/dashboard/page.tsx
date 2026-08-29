@@ -1,5 +1,7 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import {
   MapPin,
   Clock,
@@ -15,7 +17,9 @@ import {
   ChevronRight,
   ChevronLeft,
   Heart,
+  Shield,
 } from 'lucide-react';
+import FreelancerDashboard from './FreelancerDashboard';
 import './dashboard.css';
 
 // Mock Data
@@ -63,6 +67,9 @@ const FAVORITE_PROS = [
 ];
 
 export default function Dashboard() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
   
@@ -73,6 +80,23 @@ export default function Dashboard() {
   // Tracking States
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [trackingPro, setTrackingPro] = useState<boolean>(false);
+
+  // Redirect to login if unauthenticated
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/login?callbackUrl=/dashboard");
+    }
+  }, [status, router]);
+
+  // Session loading recovery timeout
+  useEffect(() => {
+    if (status === "loading") {
+      const timer = setTimeout(() => {
+        router.refresh();
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [status, router]);
 
   const toggleMenu = (menu: string) => setActiveMenu(activeMenu === menu ? null : menu);
 
@@ -91,6 +115,10 @@ export default function Dashboard() {
     setSelectedFavPro(pro);
   };
 
+  const handleLogout = () => {
+    signOut({ callbackUrl: "/login" });
+  };
+
   // Logic to handle slider button clicks
   const handleScroll = (id: string, direction: 'left' | 'right') => {
     const container = document.getElementById(id);
@@ -99,6 +127,32 @@ export default function Dashboard() {
       container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
   };
+
+  if (status === "loading" || status === "unauthenticated") {
+    return (
+      <div className="dashboard-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <div className="broadcasting-box glass-panel" style={{ padding: '2.5rem 4rem' }}>
+          <div className="spinner-modern"></div>
+          <span className="broadcasting-text">
+            {status === "unauthenticated" ? "Redirecting to login..." : "Loading your session..."}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (session?.user?.role === 'freelancer') {
+    return <FreelancerDashboard session={session} />;
+  }
+
+  const userInitials = session?.user?.name
+    ? session.user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase()
+    : 'U';
 
   return (
     <div className="dashboard-container">
@@ -181,17 +235,27 @@ export default function Dashboard() {
             {activeMenu === 'profile' && (
               <div className="dropdown-menu profile-menu glass-panel">
                 <div className="profile-header">
-                  <div className="avatar-gradient">JD</div>
+                  <div className="avatar-gradient">{userInitials}</div>
                   <div className="profile-titles">
-                    <span className="profile-name">John Doe</span>
-                    <span className="text-muted text-xs">Patna, Bihar</span>
+                    <span className="profile-name">{session?.user?.name || 'User'}</span>
+                    <span className="text-muted text-xs">{session?.user?.email || 'No email'}</span>
                   </div>
                 </div>
                 <div className="menu-divider"></div>
                 <div className="profile-details">
-                  <div className="detail-row"><span>Account:</span> <span className="text-gradient font-semibold">Premium</span></div>
-                  <div className="detail-row"><span>Password:</span> ******** <button className="text-btn">Edit</button></div>
+                  <div className="detail-row">
+                    <span>User ID:</span>
+                    <span className="text-gradient font-mono text-xs select-all">{session?.user?.id || 'N/A'}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span>Role:</span>
+                    <span className="text-gradient font-semibold capitalize">{session?.user?.role || 'client'}</span>
+                  </div>
                 </div>
+                <div className="menu-divider"></div>
+                <button className="action-btn danger-btn" onClick={handleLogout}>
+                  <LogOut size={14} /> Log Out
+                </button>
               </div>
             )}
           </div>
@@ -205,20 +269,42 @@ export default function Dashboard() {
               <div className="dropdown-menu settings-menu glass-panel">
                 <button className="action-btn"><Palette size={14} /> Change Theme</button>
                 <div className="menu-divider"></div>
-                <button className="action-btn danger-btn"><LogOut size={14} /> Log Out</button>
+                <button className="action-btn danger-btn" onClick={handleLogout}>
+                  <LogOut size={14} /> Log Out
+                </button>
               </div>
             )}
           </div>
+
+          {/* Direct Logout Button */}
+          <button 
+            className="nav-item danger-btn"
+            onClick={handleLogout}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+            title="Log Out"
+          >
+            <LogOut size={16} />
+            <span>Logout</span>
+          </button>
         </div>
       </nav>
 
       {/* MAIN CONTENT */}
       <main className="main-content">
         <section className="services-section panel-modern full-width">
-          <div className="section-header">
+          <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
-              <h2 className="section-title">Explore Services</h2>
+              <h2 className="section-title">
+                Welcome back, <span className="text-gradient">{session?.user?.name || 'User'}</span>! 👋
+              </h2>
               <p className="section-subtitle">Find local experts near you instantly.</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)', padding: '0.5rem 1rem', borderRadius: '12px' }}>
+              <Shield size={18} className="text-gradient" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>User ID</span>
+                <span className="font-mono text-xs font-semibold" style={{ color: 'var(--accent-cyan)' }}>{session?.user?.id || 'N/A'}</span>
+              </div>
             </div>
           </div>
           

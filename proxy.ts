@@ -5,7 +5,7 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const { pathname } = req.nextUrl;
 
-  // Securing only /dashboard and its sub-routes for now
+  // Securing /dashboard and its sub-routes for unauthenticated users
   if (pathname.startsWith("/dashboard")) {
     if (!isLoggedIn) {
       const loginUrl = new URL("/login", req.nextUrl.origin);
@@ -14,9 +14,16 @@ export default auth((req) => {
     }
   }
 
+  // Redirecting authenticated users away from /login and /register
+  if (pathname === "/login" || pathname === "/register") {
+    if (isLoggedIn) {
+      return NextResponse.redirect(new URL("/dashboard", req.nextUrl.origin));
+    }
+  }
+
   return NextResponse.next();
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard", "/dashboard/:path*", "/login", "/register"],
 };

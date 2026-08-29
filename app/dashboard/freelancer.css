@@ -1,0 +1,414 @@
+/* Freelancer Dashboard Theme - Dark Navy Aesthetic */
+.freelancer-dashboard-container {
+  min-height: 100vh;
+  background-color: #030712;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.08) 0%, transparent 45%),
+    radial-gradient(circle at 85% 85%, rgba(59, 130, 246, 0.06) 0%, transparent 45%);
+  color: #f8fafc;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  padding-bottom: 5rem;
+}
+
+/* Navbar Extension for Freelancer */
+.freelancer-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Section Header Structure */
+.freelancer-section {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 1.5rem;
+}
+
+.freelancer-section-subtitle {
+  color: #38bdf8;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+
+.freelancer-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1.75rem;
+}
+
+.freelancer-section-title {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
+.freelancer-view-all-link {
+  color: #38bdf8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.freelancer-view-all-link:hover {
+  color: #60a5fa;
+  transform: translateX(2px);
+}
+
+.freelancer-section-desc {
+  color: #94a3b8;
+  font-size: 1rem;
+  margin-top: 0.3rem;
+}
+
+/* Cards Grid Layouts */
+.freelancer-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Help Request Card */
+.freelancer-card {
+  background: rgba(13, 22, 44, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.freelancer-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 12px 30px -10px rgba(14, 165, 233, 0.25);
+}
+
+.freelancer-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.freelancer-card-icon {
+  width: 44px;
+  height: 44px;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+.freelancer-card-meta {
+  flex: 1;
+}
+
+.freelancer-card-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.freelancer-card-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.freelancer-tag-badge {
+  color: #38bdf8;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.freelancer-card-subtext {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.freelancer-card-action {
+  color: #38bdf8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: color 0.2s ease;
+}
+
+.freelancer-card-action:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+/* Neighbors / Collaborators Cards */
+.freelancer-person-card {
+  background: rgba(13, 22, 44, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.freelancer-person-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.freelancer-person-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.freelancer-person-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  border: 1.5px solid rgba(56, 189, 248, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #38bdf8;
+}
+
+.freelancer-person-info {
+  flex: 1;
+}
+
+.freelancer-person-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.freelancer-person-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #ffffff;
+}
+
+.freelancer-person-rating {
+  color: #38bdf8;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.freelancer-person-skill {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.freelancer-person-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.freelancer-verified-badge {
+  color: #22c55e;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.freelancer-message-btn {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: color 0.2s;
+}
+
+.freelancer-message-btn:hover {
+  color: #38bdf8;
+}
+
+/* Cooperative Ledger Section */
+.freelancer-ledger-container {
+  background: linear-gradient(180deg, rgba(8, 14, 30, 0.9) 0%, rgba(3, 7, 18, 0.95) 100%);
+  border-top: 1px solid rgba(56, 189, 248, 0.12);
+  margin-top: 3rem;
+  padding: 4rem 1.5rem;
+}
+
+.freelancer-ledger-wrapper {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.freelancer-ledger-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 3rem;
+  align-items: center;
+  margin-top: 2rem;
+}
+
+.freelancer-ledger-headline {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #ffffff;
+  margin-bottom: 1rem;
+}
+
+.freelancer-ledger-subtext {
+  color: #94a3b8;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  max-width: 540px;
+  margin-bottom: 2.5rem;
+}
+
+.freelancer-stats-row {
+  display: flex;
+  gap: 2rem;
+}
+
+.freelancer-stat-box {
+  background: rgba(13, 22, 44, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  min-width: 120px;
+}
+
+.freelancer-stat-number {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 0.2rem;
+}
+
+.freelancer-stat-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* Balance Box */
+.freelancer-balance-box {
+  background: rgba(13, 22, 44, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 20px;
+  padding: 2rem;
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+}
+
+.freelancer-balance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.freelancer-balance-title {
+  color: #cbd5e1;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.freelancer-balance-amount-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.freelancer-balance-number {
+  font-size: 3.5rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.freelancer-balance-unit {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.freelancer-progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.freelancer-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  border-radius: 10px;
+  transition: width 0.6s ease;
+}
+
+.freelancer-progress-text {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .freelancer-ledger-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  
+  .freelancer-section-title {
+    font-size: 1.75rem;
+  }
+  
+  .freelancer-ledger-headline {
+    font-size: 2rem;
+  }
+  
+  .freelancer-stats-row {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+}
