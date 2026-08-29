@@ -418,11 +418,44 @@
 @media (max-width: 900px) {
     .main-container {
         flex-direction: column;
+        min-height: auto;
     }
     .left-panel {
-        padding: 2rem;
+        padding: 3rem 1.5rem;
+        flex: 1;
+        width: 100%;
     }
     .right-panel {
         display: none; 
+    }
+}
+
+@media (max-width: 480px) {
+    .left-panel {
+        padding: 2rem 1rem;
+    }
+    .form-card, .form-container {
+        max-width: 100%;
+    }
+    .form-header h1 {
+        font-size: 1.5rem;
+    }
+    .role-selector {
+        gap: 0.5rem;
+    }
+    .role-card {
+        padding: 0.65rem 0.35rem;
+    }
+    .role-title {
+        font-size: 0.8rem;
+    }
+    .role-subtitle {
+        font-size: 0.65rem;
+    }
+    .site-footer {
+        padding: 2rem 1rem 1.5rem;
+    }
+    .footer-grid {
+        gap: 1.5rem;
     }
 }

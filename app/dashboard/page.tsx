@@ -11,22 +11,22 @@ export default async function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 sm:p-12">
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-4 sm:p-8 md:p-12">
       <div className="max-w-4xl mx-auto space-y-6">
         
         {/* Header Bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 sm:p-6 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
           <div>
             <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Protected Route</span>
-            <h1 className="text-2xl font-bold mt-1">Gig Service Dashboard</h1>
-            <p className="text-sm text-slate-500">Welcome back, {session.user.name || session.user.email}!</p>
+            <h1 className="text-xl sm:text-2xl font-bold mt-1">Gig Service Dashboard</h1>
+            <p className="text-sm text-slate-500 break-all">Welcome back, {session.user.name || session.user.email}!</p>
           </div>
 
           <LogoutButton />
         </div>
 
         {/* User Info Card */}
-        <div className="p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="p-5 sm:p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
           <h2 className="text-base font-semibold border-b border-slate-100 dark:border-slate-800 pb-3">
             Authenticated User Profile
           </h2>
@@ -39,7 +39,7 @@ export default async function DashboardPage() {
 
             <div>
               <span className="text-slate-400 text-xs block">Email Address</span>
-              <span className="font-medium">{session.user.email}</span>
+              <span className="font-medium break-all">{session.user.email}</span>
             </div>
 
             <div>

@@ -378,7 +378,7 @@ export default function Register() {
 
                 <form onSubmit={handleVerifyOtpSubmit}>
                   {/* 6 Digit Code Inputs */}
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', gap: 'clamp(4px, 1.5vw, 8px)', justifyContent: 'center', marginBottom: '20px', width: '100%' }}>
                     {otpValues.map((digit, idx) => (
                       <input
                         key={idx}
@@ -389,16 +389,17 @@ export default function Register() {
                         onChange={(e) => handleOtpChange(idx, e.target.value)}
                         onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                         style={{
-                          width: '48px',
-                          height: '54px',
+                          width: 'clamp(36px, 11vw, 48px)',
+                          height: 'clamp(44px, 13vw, 54px)',
                           textAlign: 'center',
-                          fontSize: '20px',
+                          fontSize: 'clamp(16px, 4.5vw, 20px)',
                           fontWeight: 'bold',
                           backgroundColor: '#050505',
                           border: '1px solid #333',
                           borderRadius: '8px',
                           color: '#ffffff',
                           outline: 'none',
+                          padding: 0,
                         }}
                       />
                     ))}

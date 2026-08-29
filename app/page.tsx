@@ -74,14 +74,13 @@ export default function Home() {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white">
       
       {/* Top Navbar */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-950/80 border-b border-slate-800/80 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-950/80 border-b border-slate-800/80 px-4 sm:px-6 py-3.5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
           
-          {/* Left Aligned Items: CoopConnect Brand Logo + Login + Register */}
-          <div className="flex items-center gap-8">
-            {/* Brand Logo */}
-            <Link href="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight group">
-              <span className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-400 flex items-center justify-center text-white text-lg shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
+          {/* Brand Logo */}
+          <div className="flex items-center gap-3 sm:gap-6">
+            <Link href="/" className="flex items-center gap-2 text-lg sm:text-xl font-extrabold tracking-tight group">
+              <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-cyan-400 flex items-center justify-center text-white text-base sm:text-lg shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
                 ⚡
               </span>
               <span className="bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
@@ -89,8 +88,8 @@ export default function Home() {
               </span>
             </Link>
 
-            {/* Left Nav Links: Login & Register */}
-            <nav className="hidden sm:flex items-center gap-2 pl-4 border-l border-slate-800">
+            {/* Desktop Nav Links */}
+            <nav className="hidden md:flex items-center gap-2 pl-4 border-l border-slate-800">
               <Link
                 href="/login"
                 className="px-3.5 py-1.5 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors"
@@ -106,11 +105,11 @@ export default function Home() {
             </nav>
           </div>
 
-          {/* Right Aligned Navigation Items & DB Tester Badge */}
-          <div className="flex items-center gap-4">
+          {/* Right Aligned Items */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setShowDbTester(!showDbTester)}
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border border-slate-800 bg-slate-900 hover:border-slate-700 transition-colors"
+              className="hidden lg:flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border border-slate-800 bg-slate-900 hover:border-slate-700 transition-colors"
             >
               <span className={`w-2 h-2 rounded-full ${dbConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`}></span>
               <span className="text-slate-300">
@@ -119,10 +118,17 @@ export default function Home() {
             </button>
 
             <Link
-              href="/dashboard"
-              className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:shadow-indigo-600/50"
+              href="/login"
+              className="md:hidden px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-900 border border-slate-800 rounded-lg transition-colors"
             >
-              Go to Dashboard →
+              Login
+            </Link>
+
+            <Link
+              href="/dashboard"
+              className="px-3.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-600/30 transition-all"
+            >
+              Dashboard →
             </Link>
           </div>
 
