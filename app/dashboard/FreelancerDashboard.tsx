@@ -23,6 +23,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Menu,
+  Star,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './freelancer.css';
@@ -48,6 +49,12 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
   const [selectedBookingDetail, setSelectedBookingDetail] = useState<any>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [submittingAction, setSubmittingAction] = useState(false);
+
+  // Review Modal States
+  const [selectedReviewBooking, setSelectedReviewBooking] = useState<any>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>('');
+  const [submittingReview, setSubmittingReview] = useState<boolean>(false);
 
   // Fetch Data on Mount & Poll every 4 seconds for real-time requests
   useEffect(() => {
@@ -112,6 +119,38 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
       toast.error('Network error updating booking status', { id: toastId });
     } finally {
       setSubmittingAction(false);
+    }
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedReviewBooking) return;
+    setSubmittingReview(true);
+    const toastId = toast.loading('Submitting rating & review for customer...');
+    try {
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: selectedReviewBooking._id,
+          rating: reviewRating,
+          comment: reviewComment,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Customer rating & review submitted successfully!', { id: toastId });
+        setSelectedReviewBooking(null);
+        setReviewRating(5);
+        setReviewComment('');
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to submit review', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error submitting review', { id: toastId });
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -599,6 +638,111 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                 </div>
               </div>
             </div>
+
+            {/* COMPLETED JOBS & CLIENT RATING SECTION */}
+            <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(56, 189, 248, 0.15)' }}>
+              <h3 style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.15rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle size={20} className="text-sky-400" /> Completed Jobs & Customer Reviews ({completedJobs.length})
+              </h3>
+
+              {completedJobs.length === 0 ? (
+                <div style={{ background: 'rgba(13, 22, 44, 0.5)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '14px', padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' }}>
+                  No completed jobs yet. Completed jobs will be listed here with options to rate & review your customers.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '1rem' }}>
+                  {completedJobs.map((job) => (
+                    <div key={job._id} style={{ background: 'rgba(13, 22, 44, 0.7)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '14px', padding: '1.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <div>
+                          <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '1.05rem' }}>{job.serviceTitle}</div>
+                          <div style={{ fontSize: '0.83rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                            Customer: <strong style={{ color: '#ffffff' }}>{job.client?.name || 'Customer'}</strong> ({job.address?.phone}) · Date: {new Date(job.scheduledDate).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <span style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '0.25rem 0.65rem', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 800 }}>
+                          ₹{job.totalAmount} (Cash Collected)
+                        </span>
+                      </div>
+
+                      {job.problemDescription && (
+                        <div style={{ fontSize: '0.8rem', color: '#cbd5e1', fontStyle: 'italic', marginBottom: '0.75rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
+                          Problem: "{job.problemDescription}"
+                        </div>
+                      )}
+
+                      {/* RATINGS & REVIEWS AREA */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        {/* Freelancer's review for Client */}
+                        {job.providerReview ? (
+                          <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '10px', padding: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                              <span style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 700 }}>Your Review for Customer ({job.client?.name || 'Customer'})</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star key={star} size={14} fill={star <= job.providerReview.rating ? '#fbbf24' : 'none'} color={star <= job.providerReview.rating ? '#fbbf24' : '#64748b'} />
+                                ))}
+                                <span style={{ marginLeft: '0.25rem' }}>{job.providerReview.rating}/5</span>
+                              </div>
+                            </div>
+                            {job.providerReview.comment ? (
+                              <div style={{ fontSize: '0.8rem', color: '#e2e8f0', fontStyle: 'italic' }}>"{job.providerReview.comment}"</div>
+                            ) : (
+                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No text comment provided.</div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <button
+                              onClick={() => {
+                                setSelectedReviewBooking(job);
+                                setReviewRating(5);
+                                setReviewComment('');
+                              }}
+                              style={{
+                                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
+                                border: '1px solid rgba(56, 189, 248, 0.5)',
+                                color: '#38bdf8',
+                                padding: '0.55rem 1rem',
+                                borderRadius: '8px',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.4rem',
+                              }}
+                            >
+                              <Star size={14} fill="#38bdf8" color="#38bdf8" /> Rate & Review Customer ↗
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Client's review for Freelancer */}
+                        {job.clientReview && (
+                          <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '10px', padding: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                              <span style={{ fontSize: '0.78rem', color: '#fbbf24', fontWeight: 700 }}>Customer's Rating & Review for You</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star key={star} size={14} fill={star <= job.clientReview.rating ? '#fbbf24' : 'none'} color={star <= job.clientReview.rating ? '#fbbf24' : '#64748b'} />
+                                ))}
+                                <span style={{ marginLeft: '0.25rem' }}>{job.clientReview.rating}/5</span>
+                              </div>
+                            </div>
+                            {job.clientReview.comment ? (
+                              <div style={{ fontSize: '0.8rem', color: '#e2e8f0', fontStyle: 'italic' }}>"{job.clientReview.comment}"</div>
+                            ) : (
+                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No text comment provided.</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </main>
@@ -644,6 +788,98 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                 Confirm Decline Request
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* RATE & REVIEW CUSTOMER MODAL */}
+      {selectedReviewBooking && (
+        <div className="modal-overlay">
+          <div className="modal-box glass-panel" style={{ background: '#0b1329', borderColor: 'rgba(56, 189, 248, 0.3)', maxWidth: '440px' }}>
+            <div className="modal-header">
+              <div className="modal-title-wrapper" style={{ color: '#38bdf8' }}>
+                <Star size={20} fill="#38bdf8" color="#38bdf8" />
+                <span>Rate & Review Customer</span>
+              </div>
+              <button className="close-btn-modern" onClick={() => setSelectedReviewBooking(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitReview} className="modal-body" style={{ paddingTop: '1.25rem' }}>
+              <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '12px', padding: '0.85rem', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <div style={{ color: '#94a3b8' }}>Service: <strong style={{ color: '#ffffff' }}>{selectedReviewBooking.serviceTitle}</strong></div>
+                <div style={{ color: '#94a3b8', marginTop: '0.2rem' }}>Customer: <strong style={{ color: '#38bdf8' }}>{selectedReviewBooking.client?.name || 'Customer'}</strong></div>
+              </div>
+
+              {/* STAR SELECTION */}
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <label style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 700, display: 'block', marginBottom: '0.5rem' }}>Customer Rating</label>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', margin: '0.5rem 0' }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewRating(star)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', transition: 'transform 0.15s ease' }}
+                    >
+                      <Star
+                        size={30}
+                        fill={star <= reviewRating ? '#fbbf24' : 'none'}
+                        color={star <= reviewRating ? '#fbbf24' : '#475569'}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#fbbf24' }}>
+                  {reviewRating === 5 && '⭐⭐⭐⭐⭐ Excellent Customer!'}
+                  {reviewRating === 4 && '⭐⭐⭐⭐ Very Good Experience'}
+                  {reviewRating === 3 && '⭐⭐⭐ Good Customer'}
+                  {reviewRating === 2 && '⭐⭐ Below Average'}
+                  {reviewRating === 1 && '⭐ Poor Experience'}
+                </div>
+              </div>
+
+              {/* COMMENT TEXTAREA */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: 700, display: 'block', marginBottom: '0.4rem' }}>Feedback / Notes on Customer (Optional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Friendly, clear instructions, prompt cash payment..."
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: '#030712',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    color: '#ffffff',
+                    outline: 'none',
+                    fontSize: '0.88rem',
+                    resize: 'none',
+                  }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingReview}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '0.85rem',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  opacity: submittingReview ? 0.6 : 1,
+                }}
+              >
+                {submittingReview ? 'Submitting Review...' : 'Submit Customer Rating & Review ↗'}
+              </button>
+            </form>
           </div>
         </div>
       )}

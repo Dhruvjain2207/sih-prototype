@@ -23,6 +23,7 @@ import {
   Ban,
   Search,
   Menu,
+  Star,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './client.css';
@@ -122,6 +123,12 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
   const [selectedCategory, setSelectedCategory] = useState<any>(null);
   const [selectedBookingDetail, setSelectedBookingDetail] = useState<any>(null);
   const [submittingBooking, setSubmittingBooking] = useState(false);
+
+  // Review Modal States
+  const [selectedReviewBooking, setSelectedReviewBooking] = useState<any>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>('');
+  const [submittingReview, setSubmittingReview] = useState<boolean>(false);
 
   // Booking Form State
   const [bookingForm, setBookingForm] = useState({
@@ -260,6 +267,38 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
       }
     } catch {
       toast.error('Network error cancelling booking', { id: toastId });
+    }
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedReviewBooking) return;
+    setSubmittingReview(true);
+    const toastId = toast.loading('Submitting review & rating...');
+    try {
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bookingId: selectedReviewBooking._id,
+          rating: reviewRating,
+          comment: reviewComment,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Review & rating posted successfully!', { id: toastId });
+        setSelectedReviewBooking(null);
+        setReviewRating(5);
+        setReviewComment('');
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to submit review', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error submitting review', { id: toastId });
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -767,6 +806,69 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                         <strong>Declined Reason:</strong> {b.rejectionReason}
                       </div>
                     )}
+
+                    {b.status === 'COMPLETED' && (
+                      <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        {b.clientReview ? (
+                          <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '10px', padding: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                              <span style={{ fontSize: '0.78rem', color: '#fbbf24', fontWeight: 700 }}>Your Review for {b.provider?.name || 'Freelancer'}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star key={star} size={14} fill={star <= b.clientReview.rating ? '#fbbf24' : 'none'} color={star <= b.clientReview.rating ? '#fbbf24' : '#64748b'} />
+                                ))}
+                                <span style={{ marginLeft: '0.25rem' }}>{b.clientReview.rating}/5</span>
+                              </div>
+                            </div>
+                            {b.clientReview.comment ? (
+                              <div style={{ fontSize: '0.8rem', color: '#e2e8f0', fontStyle: 'italic' }}>"{b.clientReview.comment}"</div>
+                            ) : (
+                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No text comment provided.</div>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSelectedReviewBooking(b);
+                              setReviewRating(5);
+                              setReviewComment('');
+                            }}
+                            style={{
+                              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(217, 119, 6, 0.3))',
+                              border: '1px solid rgba(245, 158, 11, 0.5)',
+                              color: '#fbbf24',
+                              padding: '0.5rem 0.9rem',
+                              borderRadius: '8px',
+                              fontSize: '0.8rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.4rem',
+                            }}
+                          >
+                            <Star size={14} fill="#fbbf24" color="#fbbf24" /> Rate & Review Freelancer
+                          </button>
+                        )}
+
+                        {b.providerReview && (
+                          <div style={{ background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: '10px', padding: '0.75rem', marginTop: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                              <span style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 700 }}>Freelancer's Rating for You</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#fbbf24', fontWeight: 800, fontSize: '0.85rem' }}>
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star key={star} size={14} fill={star <= b.providerReview.rating ? '#fbbf24' : 'none'} color={star <= b.providerReview.rating ? '#fbbf24' : '#64748b'} />
+                                ))}
+                                <span style={{ marginLeft: '0.25rem' }}>{b.providerReview.rating}/5</span>
+                              </div>
+                            </div>
+                            {b.providerReview.comment && (
+                              <div style={{ fontSize: '0.8rem', color: '#e2e8f0', fontStyle: 'italic' }}>"{b.providerReview.comment}"</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1028,6 +1130,79 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* RATE & REVIEW FREELANCER MODAL */}
+      {selectedReviewBooking && (
+        <div className="modal-overlay">
+          <div className="modal-box-modern" style={{ maxWidth: '440px' }}>
+            <div className="modal-header-modern">
+              <div className="flex items-center gap-2">
+                <Star size={20} className="text-amber-400" fill="#fbbf24" />
+                <span className="font-extrabold text-white text-base">Rate & Review Service</span>
+              </div>
+              <button className="close-btn-modern" onClick={() => setSelectedReviewBooking(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitReview} className="modal-body-modern">
+              <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 mb-4 text-xs">
+                <div className="text-slate-300 font-semibold">Service: <strong className="text-white">{selectedReviewBooking.serviceTitle}</strong></div>
+                <div className="text-slate-400 mt-0.5">Freelancer: <strong className="text-amber-300">{selectedReviewBooking.provider?.name || 'Assigned Expert'}</strong></div>
+              </div>
+
+              {/* STAR RATING SELECTION */}
+              <div className="modal-form-step-card mb-4 text-center">
+                <label className="modal-label mb-2 block text-slate-300 text-sm font-semibold">Select Your Rating</label>
+                <div className="flex items-center justify-center gap-2 py-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewRating(star)}
+                      className="p-1.5 transition-transform hover:scale-125 focus:outline-none"
+                    >
+                      <Star
+                        size={32}
+                        fill={star <= reviewRating ? '#fbbf24' : 'none'}
+                        color={star <= reviewRating ? '#fbbf24' : '#475569'}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs font-bold text-amber-400 mt-1">
+                  {reviewRating === 5 && '⭐⭐⭐⭐⭐ Exceptional Service!'}
+                  {reviewRating === 4 && '⭐⭐⭐⭐ Very Good Work'}
+                  {reviewRating === 3 && '⭐⭐⭐ Satisfactory Service'}
+                  {reviewRating === 2 && '⭐⭐ Below Expectations'}
+                  {reviewRating === 1 && '⭐ Poor Experience'}
+                </div>
+              </div>
+
+              {/* COMMENT TEXTAREA */}
+              <div className="modal-form-step-card mb-4">
+                <label className="modal-label text-slate-300 font-semibold mb-1 block">Your Detailed Feedback (Optional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Share your experience working with this freelancer (e.g., Punctual, polite, high quality work)..."
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  className="modal-input"
+                  style={{ resize: 'none' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingReview}
+                className="w-full py-3.5 rounded-xl font-extrabold text-sm text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
+              >
+                {submittingReview ? 'Submitting Review...' : 'Submit Rating & Review ↗'}
+              </button>
+            </form>
           </div>
         </div>
       )}

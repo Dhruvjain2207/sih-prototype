@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import connectToDatabase from "@/lib/mongodb";
-import { Booking, User, Notification } from "@/lib/models";
+import { Booking, User, Notification, Review } from "@/lib/models";
 import mongoose from "mongoose";
 
 // GET /api/bookings - Get bookings for logged-in user or freelancer
@@ -79,7 +79,34 @@ export async function GET() {
         .sort({ createdAt: -1 });
     }
 
-    return NextResponse.json({ success: true, bookings });
+    const bookingIds = bookings.map((b: any) => b._id);
+    const reviews = await Review.find({ booking: { $in: bookingIds } }).lean();
+
+    const reviewsMap = new Map<string, { clientReview?: any; providerReview?: any }>();
+    reviews.forEach((r: any) => {
+      const bId = r.booking.toString();
+      if (!reviewsMap.has(bId)) {
+        reviewsMap.set(bId, {});
+      }
+      const entry = reviewsMap.get(bId)!;
+      if (r.reviewType === "client_to_freelancer") {
+        entry.clientReview = r;
+      } else if (r.reviewType === "freelancer_to_client") {
+        entry.providerReview = r;
+      }
+    });
+
+    const bookingsWithReviews = bookings.map((b: any) => {
+      const plain = b.toObject ? b.toObject() : { ...b };
+      const revs = reviewsMap.get(b._id.toString()) || {};
+      return {
+        ...plain,
+        clientReview: revs.clientReview || null,
+        providerReview: revs.providerReview || null,
+      };
+    });
+
+    return NextResponse.json({ success: true, bookings: bookingsWithReviews });
   } catch (error: any) {
     console.error("GET /api/bookings error:", error);
     return NextResponse.json({ error: "Failed to fetch bookings" }, { status: 500 });

@@ -1,9 +1,11 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IReview extends Document {
-  gig: mongoose.Types.ObjectId;
-  booking?: mongoose.Types.ObjectId;
+  gig?: mongoose.Types.ObjectId;
+  booking: mongoose.Types.ObjectId;
   reviewer: mongoose.Types.ObjectId;
+  reviewee: mongoose.Types.ObjectId;
+  reviewType: "client_to_freelancer" | "freelancer_to_client";
   rating: number;
   comment?: string;
   createdAt: Date;
@@ -15,16 +17,27 @@ const ReviewSchema = new Schema<IReview>(
     gig: {
       type: Schema.Types.ObjectId,
       ref: "Gig",
-      required: [true, "Gig ID is required"],
+      required: false,
     },
     booking: {
       type: Schema.Types.ObjectId,
       ref: "Booking",
+      required: [true, "Booking ID is required"],
     },
     reviewer: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "Reviewer (User) ID is required"],
+      required: [true, "Reviewer ID is required"],
+    },
+    reviewee: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Reviewee ID is required"],
+    },
+    reviewType: {
+      type: String,
+      enum: ["client_to_freelancer", "freelancer_to_client"],
+      required: [true, "Review type is required"],
     },
     rating: {
       type: Number,
@@ -41,6 +54,8 @@ const ReviewSchema = new Schema<IReview>(
     timestamps: true,
   }
 );
+
+ReviewSchema.index({ booking: 1, reviewer: 1 }, { unique: true });
 
 const Review: Model<IReview> =
   mongoose.models.Review || mongoose.model<IReview>("Review", ReviewSchema);
