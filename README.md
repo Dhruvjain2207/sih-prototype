@@ -38,7 +38,7 @@ The platform combines modern web technologies with **Generative AI and RAG (Retr
 
 ### Database
 
-* **PostgreSQL / MongoDB**
+** MongoDB **
 
 ### AI
 
