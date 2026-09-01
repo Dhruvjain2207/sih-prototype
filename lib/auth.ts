@@ -1,10 +1,8 @@
 import NextAuth, { DefaultSession } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import "next-auth/jwt";
 import connectToDatabase from "@/lib/mongodb";
 import User from "@/lib/models/User";
-import bcrypt from "bcryptjs";
 
 // NextAuth TypeScript Module Augmentation
 declare module "next-auth" {
@@ -41,50 +39,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     }),
-    Credentials({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Please enter both email and password.");
-        }
-
-        const email = (credentials.email as string).toLowerCase().trim();
-        const password = credentials.password as string;
-
-        await connectToDatabase();
-
-        const user = await User.findOne({ email });
-
-        if (!user) {
-          throw new Error("No user found with this email.");
-        }
-
-        // Handle optional password check (e.g., user signed up via Google OAuth or OTP)
-        if (!user.password) {
-          throw new Error("This account was created without a password. Please sign in via Google/OTP.");
-        }
-
-        const isPasswordMatch = await bcrypt.compare(password, user.password);
-
-        if (!isPasswordMatch) {
-          throw new Error("Incorrect password.");
-        }
-
-        return {
-          id: user._id.toString(),
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          isVerified: user.isVerified ?? false,
-          skills: user.skills || [],
-          image: user.image || "",
-        };
-      },
-    }),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
@@ -103,10 +57,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             email,
             image: user.image || (profile as { picture?: string })?.picture || "",
             isVerified: true,
-            role: "client",
+            role: "client", // Default role; onboarding will refine to freelancer if desired
           });
         } else if (!dbUser.isVerified) {
-          // Google authentication confirms ownership of the email address
           dbUser.isVerified = true;
           await dbUser.save();
         }
@@ -119,7 +72,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = user.role;
         token.isVerified = user.isVerified ?? true;
         token.skills = user.skills || [];
-      } else if (token.email) {
+      }
+      
+      if (token.email) {
         try {
           await connectToDatabase();
           const email = token.email.toLowerCase().trim();

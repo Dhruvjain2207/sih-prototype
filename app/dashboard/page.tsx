@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import FreelancerDashboard from './FreelancerDashboard';
@@ -9,24 +9,46 @@ export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  // Redirect to login if unauthenticated
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [userProfile, setUserProfile] = useState<any>(null);
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login?callbackUrl=/dashboard');
+      return;
+    }
+
+    if (status === 'authenticated') {
+      fetchUserProfile();
     }
   }, [status, router]);
 
-  // Session loading recovery timeout
-  useEffect(() => {
-    if (status === 'loading') {
-      const timer = setTimeout(() => {
-        router.refresh();
-      }, 3500);
-      return () => clearTimeout(timer);
-    }
-  }, [status, router]);
+  const fetchUserProfile = async () => {
+    try {
+      const res = await fetch('/api/user/profile');
+      const data = await res.json();
+      if (data.success && data.user) {
+        setUserProfile(data.user);
 
-  if (status === 'loading' || status === 'unauthenticated') {
+        const reqRole = typeof window !== 'undefined' ? localStorage.getItem('requestedRole') : null;
+
+        // If user requested freelancer login OR is registered as freelancer in MongoDB
+        if (reqRole === 'freelancer' || data.user.role === 'freelancer') {
+          // Check if freelancer needs profile setup
+          if (!data.user.skills || data.user.skills.length === 0 || !data.user.phone) {
+            router.push('/onboarding?role=freelancer');
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching live profile:", err);
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  if (status === 'loading' || status === 'unauthenticated' || loadingProfile) {
     return (
       <div
         className="dashboard-container"
@@ -42,14 +64,17 @@ export default function Dashboard() {
         <div className="broadcasting-box glass-panel" style={{ padding: '2.5rem 4rem' }}>
           <div className="spinner-modern"></div>
           <span className="broadcasting-text">
-            {status === 'unauthenticated' ? 'Redirecting to login...' : 'Loading your session...'}
+            {status === 'unauthenticated' ? 'Redirecting to login...' : 'Loading your workspace...'}
           </span>
         </div>
       </div>
     );
   }
 
-  if (session?.user?.role === 'freelancer') {
+  const requestedRole = typeof window !== 'undefined' ? localStorage.getItem('requestedRole') : null;
+  const isFreelancer = userProfile?.role === 'freelancer' || requestedRole === 'freelancer';
+
+  if (isFreelancer) {
     return <FreelancerDashboard session={session} />;
   }
 

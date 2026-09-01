@@ -9,6 +9,7 @@ export interface IUser extends Document {
   phone?: string;
   skills?: string[];
   bio?: string;
+  city?: string;
   rating?: number;
   isVerified: boolean;
   otp?: string;
@@ -68,6 +69,10 @@ const UserSchema = new Schema<IUser>(
     bio: {
       type: String,
       default: "",
+    },
+    city: {
+      type: String,
+      default: "Patna",
     },
     rating: {
       type: Number,
