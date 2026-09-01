@@ -25,6 +25,8 @@ import {
   Menu,
   Star,
   CreditCard,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './client.css';
@@ -130,6 +132,64 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>('');
   const [submittingReview, setSubmittingReview] = useState<boolean>(false);
+
+  // Chat Window States
+  const [activeChatBooking, setActiveChatBooking] = useState<any>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [sendingChatMessage, setSendingChatMessage] = useState<boolean>(false);
+  const [chatIsClosed, setChatIsClosed] = useState<boolean>(false);
+
+  const fetchChatMessages = async (bookingId: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/messages`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setChatMessages(data.messages || []);
+        setChatIsClosed(data.isClosed);
+      }
+    } catch (err) {
+      console.error('Error fetching chat messages:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeChatBooking) return;
+    fetchChatMessages(activeChatBooking._id);
+    const interval = setInterval(() => {
+      fetchChatMessages(activeChatBooking._id);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeChatBooking]);
+
+  const handleSendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeChatBooking || !chatInputText.trim()) return;
+
+    setSendingChatMessage(true);
+    const textToSend = chatInputText.trim();
+    setChatInputText('');
+
+    try {
+      const res = await fetch(`/api/bookings/${activeChatBooking._id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSend }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        fetchChatMessages(activeChatBooking._id);
+      } else {
+        toast.error(data.error || 'Failed to send message');
+        setChatInputText(textToSend);
+      }
+    } catch {
+      toast.error('Network error sending message');
+      setChatInputText(textToSend);
+    } finally {
+      setSendingChatMessage(false);
+    }
+  };
 
   // Booking Form State
   const [bookingForm, setBookingForm] = useState({
@@ -268,6 +328,26 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
       }
     } catch {
       toast.error('Network error cancelling booking', { id: toastId });
+    }
+  };
+
+  const handleAcceptCashPayment = async (bookingId: string) => {
+    const toastId = toast.loading('Confirming quote with Cash Payment After Work...');
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CONFIRMED', paymentMethod: 'CASH_AFTER_WORK' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Quote Accepted! Booking confirmed for Cash Payment after work 🎉', { id: toastId, duration: 4000 });
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to confirm booking', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error confirming booking', { id: toastId });
     }
   };
 
@@ -768,7 +848,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '0.85rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#38bdf8' }}>₹{cat.price} <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 400 }}>(Cash)</span></span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#38bdf8' }}>⚡ Custom Quote by Expert</span>
                       <button style={{ background: '#6366f1', color: '#ffffff', border: 'none', padding: '0.45rem 0.9rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
                         Book Now ↗
                       </button>
@@ -812,11 +892,11 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                             fontWeight: 800,
                           }}>
                             {b.status === 'PENDING'
-                              ? '⏳ PENDING (Awaiting Freelancer Accept)'
-                              : b.status === 'ACCEPTED' && b.paymentStatus !== 'PAID'
-                              ? '✓ ACCEPTED BY FREELANCER (Payment Pending)'
+                              ? '⏳ PENDING (Awaiting Freelancer Quote)'
+                              : b.status === 'ACCEPTED'
+                              ? `⚡ QUOTE RECEIVED: ₹${b.totalAmount} (Awaiting Your Choice)`
                               : b.status === 'CONFIRMED' || b.paymentStatus === 'PAID'
-                              ? '🎉 BOOKING CONFIRMED (PAID)'
+                              ? `🎉 BOOKING CONFIRMED (${b.paymentStatus === 'PAID' ? 'PAID ONLINE' : 'CASH AFTER WORK'})`
                               : '🛠️ IN PROGRESS'}
                           </span>
                         </div>
@@ -826,13 +906,15 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                       </div>
 
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8' }}>₹{b.totalAmount}</div>
-                        {b.paymentStatus === 'PAID' ? (
-                          <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 700 }}>✅ Paid via Razorpay Test</div>
-                        ) : b.status === 'ACCEPTED' ? (
-                          <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 700 }}>⚡ Freelancer Accepted - Ready to Pay</div>
+                        {b.status === 'PENDING' ? (
+                          <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 600 }}>Custom Quote Pending</div>
                         ) : (
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Razorpay Test Mode</div>
+                          <>
+                            <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#38bdf8' }}>₹{b.totalAmount}</div>
+                            <div style={{ fontSize: '0.75rem', color: b.paymentStatus === 'PAID' ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
+                              {b.paymentStatus === 'PAID' ? '✅ Paid via Razorpay' : b.status === 'CONFIRMED' ? '💵 Cash After Work' : 'Quoted Price by Expert'}
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
@@ -853,27 +935,85 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                         📅 Date: {new Date(b.scheduledDate).toLocaleDateString()} ({b.timeSlot}) · 📍 {b.address?.houseFlat}, {b.address?.streetArea}, {b.address?.city}
                       </div>
 
-                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {/* Razorpay Pay Now Button when Freelancer has Accepted */}
-                        {b.status === 'ACCEPTED' && b.paymentStatus !== 'PAID' && (
+                      <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* CUSTOMER DECISION BUTTONS FOR QUOTED JOB */}
+                        {b.status === 'ACCEPTED' && (
+                          <>
+                            <button
+                              onClick={() => handleRazorpayPayment(b)}
+                              style={{
+                                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                border: 'none',
+                                color: '#ffffff',
+                                padding: '0.55rem 0.95rem',
+                                borderRadius: '10px',
+                                fontSize: '0.82rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.4rem',
+                                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
+                              }}
+                            >
+                              <CreditCard size={15} /> Accept & Pay ₹{b.totalAmount} (Online)
+                            </button>
+
+                            <button
+                              onClick={() => handleAcceptCashPayment(b._id)}
+                              style={{
+                                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.3))',
+                                border: '1px solid rgba(34, 197, 94, 0.5)',
+                                color: '#4ade80',
+                                padding: '0.55rem 0.95rem',
+                                borderRadius: '10px',
+                                fontSize: '0.82rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.4rem',
+                              }}
+                            >
+                              💵 Accept & Pay Cash
+                            </button>
+
+                            <button
+                              onClick={() => handleCancelBooking(b._id)}
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#ef4444',
+                                padding: '0.55rem 0.85rem',
+                                borderRadius: '10px',
+                                fontSize: '0.82rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ❌ Decline Quote
+                            </button>
+                          </>
+                        )}
+
+                        {(b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS') && (
                           <button
-                            onClick={() => handleRazorpayPayment(b)}
+                            onClick={() => setActiveChatBooking(b)}
                             style={{
-                              background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                              border: 'none',
-                              color: '#ffffff',
-                              padding: '0.55rem 1.1rem',
-                              borderRadius: '10px',
-                              fontSize: '0.85rem',
+                              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
+                              border: '1px solid rgba(56, 189, 248, 0.5)',
+                              color: '#38bdf8',
+                              padding: '0.45rem 0.85rem',
+                              borderRadius: '8px',
+                              fontSize: '0.8rem',
                               fontWeight: 800,
                               cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '0.5rem',
-                              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
+                              gap: '0.35rem',
                             }}
                           >
-                            <CreditCard size={16} /> Pay ₹{b.totalAmount} (Razorpay)
+                            <MessageSquare size={14} /> Chat with Expert
                           </button>
                         )}
 
@@ -881,7 +1021,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                           View Details
                         </button>
 
-                        {(b.status === 'PENDING' || (b.status === 'ACCEPTED' && b.paymentStatus !== 'PAID')) && (
+                        {b.status === 'PENDING' && (
                           <button onClick={() => handleCancelBooking(b._id)} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
                             Cancel Request
                           </button>
@@ -1037,12 +1177,12 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
               {/* PRICE & WORKFLOW BANNER */}
               <div style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(56, 189, 248, 0.1))', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '14px', padding: '1rem 1.25rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Service Rate</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#38bdf8' }}>₹{selectedCategory.price}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Pricing Mode</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#38bdf8' }}>⚡ Custom Quote by Expert</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '0.25rem 0.65rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                    ⚡ Request $\rightarrow$ Freelancer Accepts $\rightarrow$ Pay Online / Cash
+                    1. Submit Request $\rightarrow$ 2. Expert Quotes Price $\rightarrow$ 3. Accept & Pay
                   </span>
                 </div>
               </div>
@@ -1246,7 +1386,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                   gap: '0.5rem',
                 }}
               >
-                {submittingBooking ? 'Finding Available Experts & Requesting...' : `Request ${selectedCategory.name} Expert (₹${selectedCategory.price}) ↗`}
+                {submittingBooking ? 'Sending Request to Local Experts...' : `Request ${selectedCategory.name} Expert (Quote Pending) ↗`}
               </button>
             </form>
           </div>
@@ -1392,6 +1532,112 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                 {submittingReview ? 'Submitting Review...' : 'Submit Rating & Review ↗'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CHAT WINDOW MODAL */}
+      {activeChatBooking && (
+        <div className="modal-overlay">
+          <div className="modal-box glass-panel" style={{ background: '#0b1329', borderColor: 'rgba(56, 189, 248, 0.3)', maxWidth: '560px', width: '92%', height: '580px', display: 'flex', flexDirection: 'column', padding: 0, borderRadius: '20px', overflow: 'hidden' }}>
+            {/* Chat Header */}
+            <div style={{ padding: '1rem 1.25rem', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(56, 189, 248, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                    Chat: {activeChatBooking.provider?.name || 'Service Expert'}
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>
+                    {activeChatBooking.serviceTitle} ({activeChatBooking.status})
+                  </span>
+                </div>
+              </div>
+              <button className="close-btn-modern" onClick={() => setActiveChatBooking(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '0.4rem', borderRadius: '8px', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Chat Body - Messages List */}
+            <div style={{ flex: 1, padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.85rem', background: 'rgba(3, 7, 18, 0.6)' }}>
+              {chatMessages.length === 0 ? (
+                <div style={{ margin: 'auto', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                  <MessageSquare size={32} style={{ color: '#38bdf8', margin: '0 auto 0.5rem', opacity: 0.6 }} />
+                  Start the conversation! Type a message below to discuss appointment details or address instructions.
+                </div>
+              ) : (
+                chatMessages.map((msg, idx) => {
+                  const isSelf = msg.senderRole === 'client';
+                  return (
+                    <div
+                      key={msg._id || idx}
+                      style={{
+                        alignSelf: isSelf ? 'flex-end' : 'flex-start',
+                        maxWidth: '80%',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '0.2rem', textAlign: isSelf ? 'right' : 'left' }}>
+                        {msg.senderName} ({msg.senderRole}) · {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div
+                        style={{
+                          background: isSelf
+                            ? 'linear-gradient(135deg, #0284c7, #2563eb)'
+                            : 'rgba(30, 41, 59, 0.9)',
+                          border: `1px solid ${isSelf ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                          color: '#ffffff',
+                          padding: '0.7rem 0.95rem',
+                          borderRadius: isSelf ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
+                          fontSize: '0.88rem',
+                          lineHeight: 1.4,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                        }}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Chat Footer - Input Form */}
+            {chatIsClosed ? (
+              <div style={{ padding: '0.85rem 1.25rem', background: 'rgba(239, 68, 68, 0.1)', borderTop: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: '0.8rem', textAlign: 'center', fontWeight: 600 }}>
+                🔒 Chat session closed - Service completed or cancelled.
+              </div>
+            ) : (
+              <form onSubmit={handleSendChatMessage} style={{ padding: '0.85rem 1.25rem', background: 'rgba(15, 23, 42, 0.95)', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: '0.6rem' }}>
+                <input
+                  type="text"
+                  placeholder="Type a message to the expert..."
+                  value={chatInputText}
+                  onChange={(e) => setChatInputText(e.target.value)}
+                  style={{ flex: 1, background: '#030712', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '0.7rem 0.95rem', color: '#ffffff', fontSize: '0.88rem', outline: 'none' }}
+                />
+                <button
+                  type="submit"
+                  disabled={sendingChatMessage || !chatInputText.trim()}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '0.7rem 1.1rem',
+                    borderRadius: '10px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    opacity: sendingChatMessage || !chatInputText.trim() ? 0.5 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <Send size={16} /> Send
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}

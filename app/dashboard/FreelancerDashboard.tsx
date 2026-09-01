@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { signOut } from 'next-auth/react';
 import {
   Wrench,
@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   Menu,
   Star,
+  Volume2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './freelancer.css';
@@ -60,6 +61,119 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
   const [freelancerSkills, setFreelancerSkills] = useState<string[]>(session?.user?.skills || []);
   const [isSkillsModalOpen, setIsSkillsModalOpen] = useState(false);
   const [submittingSkills, setSubmittingSkills] = useState(false);
+
+  // Quoting State
+  const [quotePrices, setQuotePrices] = useState<Record<string, string>>({});
+
+  const handleQuoteChange = (bookingId: string, val: string) => {
+    setQuotePrices((prev) => ({ ...prev, [bookingId]: val }));
+  };
+
+  // Chat Window States
+  const [activeChatBooking, setActiveChatBooking] = useState<any>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [sendingChatMessage, setSendingChatMessage] = useState<boolean>(false);
+  const [chatIsClosed, setChatIsClosed] = useState<boolean>(false);
+
+  const fetchChatMessages = async (bookingId: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/messages`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setChatMessages(data.messages || []);
+        setChatIsClosed(data.isClosed);
+      }
+    } catch (err) {
+      console.error('Error fetching chat messages:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeChatBooking) return;
+    fetchChatMessages(activeChatBooking._id);
+    const interval = setInterval(() => {
+      fetchChatMessages(activeChatBooking._id);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeChatBooking]);
+
+  const handleSendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeChatBooking || !chatInputText.trim()) return;
+
+    setSendingChatMessage(true);
+    const textToSend = chatInputText.trim();
+    setChatInputText('');
+
+    try {
+      const res = await fetch(`/api/bookings/${activeChatBooking._id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToSend }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        fetchChatMessages(activeChatBooking._id);
+      } else {
+        toast.error(data.error || 'Failed to send message');
+        setChatInputText(textToSend);
+      }
+    } catch {
+      toast.error('Network error sending message');
+      setChatInputText(textToSend);
+    } finally {
+      setSendingChatMessage(false);
+    }
+  };
+
+  // Audio Alert State & 5-Second Ring Sound Function (Web Audio API)
+  const prevPendingCountRef = useRef<number>(-1);
+
+  const playNotificationRing = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      let elapsedMs = 0;
+
+      const ringInterval = setInterval(() => {
+        if (elapsedMs >= 5000) {
+          clearInterval(ringInterval);
+          ctx.close();
+          return;
+        }
+
+        // Chime tone 1 (A5 880Hz)
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(880, ctx.currentTime);
+        gain1.gain.setValueAtTime(0.25, ctx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(ctx.currentTime);
+        osc1.stop(ctx.currentTime + 0.35);
+
+        // Chime tone 2 (C6 1046.5Hz) after 180ms delay
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1046.5, ctx.currentTime + 0.18);
+        gain2.gain.setValueAtTime(0.3, ctx.currentTime + 0.18);
+        gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(ctx.currentTime + 0.18);
+        osc2.stop(ctx.currentTime + 0.55);
+
+        elapsedMs += 750;
+      }, 750);
+    } catch (e) {
+      console.error('Audio playback error:', e);
+    }
+  };
 
   const DOMAIN_OPTIONS = [
     'Plumbing',
@@ -117,6 +231,19 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
       const bookingsData = await bookingsRes.json();
       if (bookingsData.success && bookingsData.bookings) {
         setBookings(bookingsData.bookings);
+
+        // Check for new pending booking requests to trigger 5-second ring sound
+        const newPendingList = bookingsData.bookings.filter((b: any) => b.status === 'PENDING');
+        const newPendingCount = newPendingList.length;
+
+        if (prevPendingCountRef.current !== -1 && newPendingCount > prevPendingCountRef.current) {
+          playNotificationRing();
+          toast.success('🔔 NEW SERVICE REQUEST RECEIVED! (Ringing for 5s)', {
+            duration: 5000,
+            style: { background: '#0284c7', color: '#ffffff', fontWeight: 800 },
+          });
+        }
+        prevPendingCountRef.current = newPendingCount;
       }
 
       // 2. Fetch Notifications
@@ -125,6 +252,13 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
       if (notifData.success) {
         setNotifications(notifData.notifications || []);
         setUnreadNotificationsCount(notifData.unreadCount || 0);
+      }
+
+      // 3. Fetch Freelancer Skills/Work Domains
+      const skillsRes = await fetch('/api/freelancer/skills');
+      const skillsData = await skillsRes.json();
+      if (skillsData.success && Array.isArray(skillsData.skills)) {
+        setFreelancerSkills(skillsData.skills);
       }
     } catch (err) {
       console.error("Error fetching freelancer dashboard data:", err);
@@ -140,7 +274,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
   };
 
   // Status Transitions
-  const handleUpdateStatus = async (bookingId: string, targetStatus: string, reason?: string) => {
+  const handleUpdateStatus = async (bookingId: string, targetStatus: string, reason?: string, price?: number) => {
     setSubmittingAction(true);
     const toastId = toast.loading(`Updating booking status...`);
 
@@ -148,12 +282,12 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
       const res = await fetch(`/api/bookings/${bookingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: targetStatus, rejectionReason: reason }),
+        body: JSON.stringify({ status: targetStatus, rejectionReason: reason, quotedPrice: price }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success(`Booking ${targetStatus.toLowerCase()} successfully!`, { id: toastId, duration: 4000 });
+        toast.success(targetStatus === 'ACCEPTED' ? `Quote sent (₹${price}) & request accepted!` : `Booking ${targetStatus.toLowerCase()} successfully!`, { id: toastId, duration: 4000 });
         setSelectedRejectBooking(null);
         setSelectedBookingDetail(null);
         setRejectionReason('');
@@ -544,25 +678,49 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
             </div>
           </div>
 
-          <button
-            onClick={() => setIsSkillsModalOpen(true)}
-            style={{
-              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
-              border: '1px solid rgba(56, 189, 248, 0.5)',
-              color: '#38bdf8',
-              padding: '0.6rem 1.25rem',
-              borderRadius: '10px',
-              fontWeight: 800,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            ⚙️ Manage Work Domains
-          </button>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                playNotificationRing();
+                toast.success('🔔 Playing 5-second test ring chime sound!', { duration: 5000 });
+              }}
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                color: '#fbbf24',
+                padding: '0.6rem 1rem',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+              }}
+            >
+              <Volume2 size={15} /> Test 5s Ring Sound
+            </button>
+
+            <button
+              onClick={() => setIsSkillsModalOpen(true)}
+              style={{
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
+                border: '1px solid rgba(56, 189, 248, 0.5)',
+                color: '#38bdf8',
+                padding: '0.6rem 1.25rem',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              ⚙️ Manage Work Domains
+            </button>
+          </div>
         </div>
 
         {/* SECTION 1: NEW BOOKING REQUESTS (PENDING) */}
@@ -591,7 +749,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                       <div className="freelancer-card-meta">
                         <div className="freelancer-card-title-row">
                           <span className="freelancer-card-title">{req.serviceTitle}</span>
-                          <span className="freelancer-tag-badge">₹{req.totalAmount} (Cash)</span>
+                          <span className="freelancer-tag-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>⚡ Quote Pending</span>
                         </div>
                         <div className="freelancer-card-subtext">
                           Customer: <strong>{req.client?.name || 'Customer'}</strong> ({req.address?.phone || req.client?.phone || 'No phone'})
@@ -607,29 +765,86 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <button
-                      onClick={() => handleUpdateStatus(req._id, 'ACCEPTED')}
-                      disabled={submittingAction}
-                      style={{
-                        width: '100%',
-                        background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(16, 185, 129, 0.35))',
-                        border: '1px solid rgba(34, 197, 94, 0.5)',
-                        color: '#4ade80',
-                        padding: '0.75rem',
-                        borderRadius: '12px',
-                        fontWeight: 800,
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.4rem',
-                        boxShadow: '0 4px 15px rgba(34, 197, 94, 0.15)',
-                      }}
-                    >
-                      <Check size={18} /> Accept Request & Claim Job ↗
-                    </button>
+                  <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>
+                        Enter Your Quoted Price (₹) for this job:
+                      </label>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(56,189,248,0.2)', padding: '0.55rem 0.85rem', borderRadius: '8px', color: '#38bdf8', fontWeight: 800 }}>₹</span>
+                        <input
+                          type="number"
+                          placeholder="e.g. 250"
+                          value={quotePrices[req._id] || ''}
+                          onChange={(e) => handleQuoteChange(req._id, e.target.value)}
+                          style={{
+                            flex: 1,
+                            background: '#030712',
+                            border: '1px solid rgba(56, 189, 248, 0.3)',
+                            borderRadius: '8px',
+                            padding: '0.55rem 0.85rem',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '0.9rem',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => setSelectedRejectBooking(req)}
+                        disabled={submittingAction}
+                        style={{
+                          flex: 1,
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(239, 68, 68, 0.35)',
+                          color: '#ef4444',
+                          padding: '0.75rem',
+                          borderRadius: '12px',
+                          fontWeight: 700,
+                          fontSize: '0.85rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.35rem',
+                        }}
+                      >
+                        <Ban size={16} /> Decline Request
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          const price = Number(quotePrices[req._id]);
+                          if (!price || price <= 0) {
+                            toast.error('Please enter a valid price quote (₹) before accepting!');
+                            return;
+                          }
+                          handleUpdateStatus(req._id, 'ACCEPTED', undefined, price);
+                        }}
+                        disabled={submittingAction}
+                        style={{
+                          flex: 2,
+                          background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(16, 185, 129, 0.35))',
+                          border: '1px solid rgba(34, 197, 94, 0.5)',
+                          color: '#4ade80',
+                          padding: '0.75rem',
+                          borderRadius: '12px',
+                          fontWeight: 800,
+                          fontSize: '0.88rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.4rem',
+                          boxShadow: '0 4px 15px rgba(34, 197, 94, 0.15)',
+                        }}
+                      >
+                        <Check size={18} /> Send Quote & Accept ↗
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -687,6 +902,13 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => setActiveChatBooking(job)}
+                      style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.35)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                    >
+                      <MessageSquare size={15} /> Chat with Customer
+                    </button>
+
                     {(job.status === 'ACCEPTED' || job.status === 'CONFIRMED') && (
                       <button
                         onClick={() => handleUpdateStatus(job._id, 'IN_PROGRESS')}
@@ -1085,6 +1307,113 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
           </div>
         </div>
       )}
+
+      {/* CHAT WINDOW MODAL FOR FREELANCER */}
+      {activeChatBooking && (
+        <div className="modal-overlay">
+          <div className="modal-box glass-panel" style={{ background: '#0b1329', borderColor: 'rgba(56, 189, 248, 0.3)', maxWidth: '560px', width: '92%', height: '580px', display: 'flex', flexDirection: 'column', padding: 0, borderRadius: '20px', overflow: 'hidden' }}>
+            {/* Chat Header */}
+            <div style={{ padding: '1rem 1.25rem', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(56, 189, 248, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>
+                    Chat: {activeChatBooking.client?.name || 'Customer'}
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>
+                    {activeChatBooking.serviceTitle} ({activeChatBooking.status})
+                  </span>
+                </div>
+              </div>
+              <button className="close-btn-modern" onClick={() => setActiveChatBooking(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '0.4rem', borderRadius: '8px', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Chat Body - Messages List */}
+            <div style={{ flex: 1, padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.85rem', background: 'rgba(3, 7, 18, 0.6)' }}>
+              {chatMessages.length === 0 ? (
+                <div style={{ margin: 'auto', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                  <MessageSquare size={32} style={{ color: '#38bdf8', margin: '0 auto 0.5rem', opacity: 0.6 }} />
+                  Start the conversation! Type a message below to discuss appointment details or address instructions with the customer.
+                </div>
+              ) : (
+                chatMessages.map((msg, idx) => {
+                  const isSelf = msg.senderRole === 'freelancer';
+                  return (
+                    <div
+                      key={msg._id || idx}
+                      style={{
+                        alignSelf: isSelf ? 'flex-end' : 'flex-start',
+                        maxWidth: '80%',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '0.2rem', textAlign: isSelf ? 'right' : 'left' }}>
+                        {msg.senderName} ({msg.senderRole}) · {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      <div
+                        style={{
+                          background: isSelf
+                            ? 'linear-gradient(135deg, #0284c7, #2563eb)'
+                            : 'rgba(30, 41, 59, 0.9)',
+                          border: `1px solid ${isSelf ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                          color: '#ffffff',
+                          padding: '0.7rem 0.95rem',
+                          borderRadius: isSelf ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
+                          fontSize: '0.88rem',
+                          lineHeight: 1.4,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                        }}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Chat Footer - Input Form */}
+            {chatIsClosed ? (
+              <div style={{ padding: '0.85rem 1.25rem', background: 'rgba(239, 68, 68, 0.1)', borderTop: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: '0.8rem', textAlign: 'center', fontWeight: 600 }}>
+                🔒 Chat session closed - Service completed or cancelled.
+              </div>
+            ) : (
+              <form onSubmit={handleSendChatMessage} style={{ padding: '0.85rem 1.25rem', background: 'rgba(15, 23, 42, 0.95)', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: '0.6rem' }}>
+                <input
+                  type="text"
+                  placeholder="Type a message to the customer..."
+                  value={chatInputText}
+                  onChange={(e) => setChatInputText(e.target.value)}
+                  style={{ flex: 1, background: '#030712', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '0.7rem 0.95rem', color: '#ffffff', fontSize: '0.88rem', outline: 'none' }}
+                />
+                <button
+                  type="submit"
+                  disabled={sendingChatMessage || !chatInputText.trim()}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '0.7rem 1.1rem',
+                    borderRadius: '10px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    opacity: sendingChatMessage || !chatInputText.trim() ? 0.5 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                  }}
+                >
+                  <Send size={16} /> Send
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

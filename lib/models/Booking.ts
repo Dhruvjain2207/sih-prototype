@@ -21,6 +21,7 @@ export interface IBooking extends Document {
   provider: any;
   status: "PENDING" | "ACCEPTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "IN_PROGRESS" | "COMPLETED";
   totalAmount: number;
+  quotedPrice?: number;
   paymentMethod: "RAZORPAY" | "CASH_AFTER_WORK";
   paymentStatus: "PENDING" | "PAID" | "FAILED";
   razorpayOrderId?: string;
@@ -96,7 +97,11 @@ const BookingSchema = new Schema<IBooking>(
     },
     totalAmount: {
       type: Number,
-      required: [true, "Total amount is required"],
+      default: 0,
+    },
+    quotedPrice: {
+      type: Number,
+      default: 0,
     },
     paymentMethod: {
       type: String,

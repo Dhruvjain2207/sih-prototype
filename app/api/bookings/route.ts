@@ -169,7 +169,7 @@ export async function POST(req: Request) {
     const clientId = dbClient._id;
     const targetCategory = requestedCategory || "Plumbing";
     const finalServiceTitle = requestedTitle || `${targetCategory} Service`;
-    const finalPrice = totalAmount || 45;
+    const finalPrice = 0; // Awaiting Freelancer Quote
 
     // 1. Find ALL Freelancers matching this specific category skill
     const categoryKeyword = targetCategory.split(" ")[0].replace(/[^a-zA-Z]/g, "");
@@ -191,7 +191,7 @@ export async function POST(req: Request) {
       client: clientId,
       provider: matchingFreelancers.length === 1 ? matchingFreelancers[0]._id : undefined,
       status: "PENDING",
-      totalAmount: finalPrice,
+      totalAmount: 0,
       paymentMethod: "CASH_AFTER_WORK",
       scheduledDate: new Date(scheduledDate),
       timeSlot: timeSlot || "09:00 AM - 12:00 PM",

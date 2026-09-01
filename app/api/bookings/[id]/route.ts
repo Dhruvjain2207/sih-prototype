@@ -69,7 +69,7 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await req.json();
-    const { status: targetStatus, rejectionReason } = body;
+    const { status: targetStatus, rejectionReason, quotedPrice, paymentMethod } = body;
 
     if (!targetStatus) {
       return NextResponse.json({ error: "Target status is required" }, { status: 400 });
@@ -132,19 +132,52 @@ export async function PATCH(
           { status: 400 }
         );
       }
+      const finalQuote = Number(quotedPrice || body.totalAmount);
+      if (!finalQuote || finalQuote <= 0) {
+        return NextResponse.json(
+          { error: "Please enter a valid quoted price (₹) to accept this booking." },
+          { status: 400 }
+        );
+      }
+
       const acceptingUserId = userMongoId || sessionUserId;
       booking.status = "ACCEPTED";
       booking.provider = acceptingUserId; // Claim booking for accepting freelancer
+      booking.totalAmount = finalQuote;
+      booking.quotedPrice = finalQuote;
       booking.acceptedAt = new Date();
 
-      // Notify Client with accepting freelancer's name
+      // Notify Client with accepting freelancer's name and quote price
       const providerName = dbUser?.name || session.user.name || "A service expert";
       await Notification.create({
         recipient: booking.client,
         sender: acceptingUserId,
         type: "BOOKING_ACCEPTED",
-        title: "Booking Accepted! 🎉",
-        message: `Your booking for "${booking.serviceTitle}" was accepted by ${providerName}.`,
+        title: "Quote Received & Accepted! 🎉",
+        message: `Your booking for "${booking.serviceTitle}" was accepted by ${providerName} with a quoted price of ₹${finalQuote}. Please accept or decline the quote.`,
+        booking: booking._id,
+      });
+
+    } else if (requestedStatus === "CONFIRMED") {
+      if (currentStatus !== "ACCEPTED") {
+        return NextResponse.json(
+          { error: "Can only confirm a booking that has been accepted by the freelancer." },
+          { status: 400 }
+        );
+      }
+      booking.status = "CONFIRMED";
+      if (paymentMethod === "CASH_AFTER_WORK") {
+        booking.paymentMethod = "CASH_AFTER_WORK";
+      }
+
+      // Notify Provider
+      const clientName = dbUser?.name || session.user.name || "The customer";
+      await Notification.create({
+        recipient: booking.provider,
+        sender: sessionUserId,
+        type: "BOOKING_ACCEPTED",
+        title: "Booking Confirmed! 🎉",
+        message: `${clientName} accepted your quote of ₹${booking.totalAmount} (${booking.paymentMethod === "CASH_AFTER_WORK" ? "Cash After Work" : "Online"}). Booking confirmed!`,
         booking: booking._id,
       });
 

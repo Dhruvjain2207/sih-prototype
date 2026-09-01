@@ -12,6 +12,7 @@ declare module "next-auth" {
     id?: string;
     role?: "client" | "freelancer" | "admin";
     isVerified?: boolean;
+    skills?: string[];
   }
 
   interface Session {
@@ -19,6 +20,7 @@ declare module "next-auth" {
       id?: string;
       role?: "client" | "freelancer" | "admin";
       isVerified?: boolean;
+      skills?: string[];
     } & DefaultSession["user"];
   }
 }
@@ -28,6 +30,7 @@ declare module "next-auth/jwt" {
     id?: string;
     role?: "client" | "freelancer" | "admin";
     isVerified?: boolean;
+    skills?: string[];
   }
 }
 
@@ -76,6 +79,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           role: user.role,
           isVerified: user.isVerified ?? false,
+          skills: user.skills || [],
           image: user.image || "",
         };
       },
@@ -113,7 +117,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.role = user.role;
         token.isVerified = user.isVerified ?? true;
-      } else if (!token.id && token.email) {
+        token.skills = user.skills || [];
+      } else if (token.email) {
         try {
           await connectToDatabase();
           const email = token.email.toLowerCase().trim();
@@ -122,6 +127,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             token.id = (dbUser._id as { toString(): string }).toString();
             token.role = dbUser.role;
             token.isVerified = dbUser.isVerified;
+            token.skills = dbUser.skills || [];
           }
         } catch (err) {
           console.error("[Auth JWT Error]", err);
@@ -134,6 +140,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         session.user.role = token.role as "client" | "freelancer" | "admin";
         session.user.isVerified = token.isVerified as boolean;
+        session.user.skills = (token.skills as string[]) || [];
       }
       return session;
     },
