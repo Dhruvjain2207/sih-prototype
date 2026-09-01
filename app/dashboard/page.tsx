@@ -34,10 +34,17 @@ export default function Dashboard() {
 
         // If user requested freelancer login OR is registered as freelancer in MongoDB
         if (reqRole === 'freelancer' || data.user.role === 'freelancer') {
-          // Check if freelancer needs profile setup
-          if (!data.user.skills || data.user.skills.length === 0 || !data.user.phone) {
+          const isProfileComplete = Array.isArray(data.user.skills) && data.user.skills.length > 0 && !!data.user.phone;
+
+          if (!isProfileComplete) {
+            // FIRST TIME ONLY: Send to onboarding to select skills & phone
             router.push('/onboarding?role=freelancer');
             return;
+          } else {
+            // RETURNING FREELANCER: Profile is complete! Clear requestedRole flag
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('requestedRole');
+            }
           }
         }
       }

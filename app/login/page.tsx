@@ -109,7 +109,7 @@ export default function Login() {
                   if (typeof window !== 'undefined') {
                     localStorage.setItem("requestedRole", "freelancer");
                   }
-                  signIn("google", { callbackUrl: "/onboarding?role=freelancer" });
+                  signIn("google", { callbackUrl: "/dashboard" });
                 }}
                 style={{
                   width: '100%',

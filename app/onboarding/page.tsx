@@ -84,6 +84,9 @@ function OnboardingContent() {
 
       const data = await res.json();
       if (res.ok && data.success) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('requestedRole');
+        }
         toast.success('Profile setup complete! Welcome to CoopConnect 🎉', { id: toastId, duration: 4000 });
         setTimeout(() => {
           window.location.href = '/dashboard';
