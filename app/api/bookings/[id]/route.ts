@@ -173,8 +173,8 @@ export async function PATCH(
       if (!isProvider) {
         return NextResponse.json({ error: "Only the assigned service provider can start this service." }, { status: 403 });
       }
-      if (currentStatus !== "ACCEPTED") {
-        return NextResponse.json({ error: "Can only start a service that has been ACCEPTED." }, { status: 400 });
+      if (currentStatus !== "ACCEPTED" && currentStatus !== "CONFIRMED") {
+        return NextResponse.json({ error: "Can only start a service that has been accepted or confirmed." }, { status: 400 });
       }
       booking.status = "IN_PROGRESS";
       booking.startedAt = new Date();
@@ -193,7 +193,7 @@ export async function PATCH(
       if (!isProvider) {
         return NextResponse.json({ error: "Only the assigned service provider can mark work as completed." }, { status: 403 });
       }
-      if (currentStatus !== "IN_PROGRESS" && currentStatus !== "ACCEPTED") {
+      if (currentStatus !== "IN_PROGRESS" && currentStatus !== "ACCEPTED" && currentStatus !== "CONFIRMED") {
         return NextResponse.json({ error: `Cannot complete a booking with status ${currentStatus}` }, { status: 400 });
       }
       booking.status = "COMPLETED";

@@ -56,6 +56,52 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
   const [reviewComment, setReviewComment] = useState<string>('');
   const [submittingReview, setSubmittingReview] = useState<boolean>(false);
 
+  // Work Domains State
+  const [freelancerSkills, setFreelancerSkills] = useState<string[]>(session?.user?.skills || []);
+  const [isSkillsModalOpen, setIsSkillsModalOpen] = useState(false);
+  const [submittingSkills, setSubmittingSkills] = useState(false);
+
+  const DOMAIN_OPTIONS = [
+    'Plumbing',
+    'Electrician',
+    'House Cleaning',
+    'Cook / Chef',
+    'Carpentry & Woodwork',
+    'Painting & Decorating',
+    'AC & Appliance Repair',
+    'Gardening & Lawn Care',
+  ];
+
+  const handleToggleDomainSkill = (domain: string) => {
+    setFreelancerSkills((prev) =>
+      prev.includes(domain) ? prev.filter((s) => s !== domain) : [...prev, domain]
+    );
+  };
+
+  const handleSaveSkills = async () => {
+    setSubmittingSkills(true);
+    const toastId = toast.loading('Saving work domains...');
+    try {
+      const res = await fetch('/api/freelancer/skills', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skills: freelancerSkills }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Work domains updated successfully!', { id: toastId });
+        setIsSkillsModalOpen(false);
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to update work domains', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error updating work domains', { id: toastId });
+    } finally {
+      setSubmittingSkills(false);
+    }
+  };
+
   // Fetch Data on Mount & Poll every 4 seconds for real-time requests
   useEffect(() => {
     fetchData();
@@ -179,7 +225,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
 
   // Categorize Real Bookings
   const pendingRequests = bookings.filter((b) => b.status === 'PENDING');
-  const activeJobs = bookings.filter((b) => b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS');
+  const activeJobs = bookings.filter((b) => b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS');
   const completedJobs = bookings.filter((b) => b.status === 'COMPLETED');
   const pastInactives = bookings.filter((b) => b.status === 'REJECTED' || b.status === 'CANCELLED');
 
@@ -454,6 +500,71 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
 
       {/* MAIN CONTENT AREA */}
       <main>
+        {/* WORK DOMAINS SUMMARY BANNER */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.7))',
+          border: '1px solid rgba(56, 189, 248, 0.25)',
+          borderRadius: '16px',
+          padding: '1.25rem 1.5rem',
+          margin: '1.5rem 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+        }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Zap size={14} /> My Active Service Domains
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.6rem' }}>
+              {freelancerSkills.length === 0 ? (
+                <span style={{ fontSize: '0.85rem', color: '#f59e0b', fontStyle: 'italic' }}>
+                  No service domains selected yet. Click "Manage Domains" to select your skills!
+                </span>
+              ) : (
+                freelancerSkills.map((sk) => (
+                  <span
+                    key={sk}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      color: '#38bdf8',
+                      padding: '0.25rem 0.7rem',
+                      borderRadius: '12px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓ {sk}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsSkillsModalOpen(true)}
+            style={{
+              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
+              border: '1px solid rgba(56, 189, 248, 0.5)',
+              color: '#38bdf8',
+              padding: '0.6rem 1.25rem',
+              borderRadius: '10px',
+              fontWeight: 800,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            ⚙️ Manage Work Domains
+          </button>
+        </div>
+
         {/* SECTION 1: NEW BOOKING REQUESTS (PENDING) */}
         <section id="pending-requests-sec" className="freelancer-section">
           <div className="freelancer-section-subtitle">RIGHT NOW</div>
@@ -539,32 +650,44 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
             <div className="freelancer-cards-grid" style={{ marginTop: '1.25rem' }}>
               {activeJobs.map((job) => (
                 <div key={job._id} className="freelancer-person-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div>
                       <h3 style={{ color: '#ffffff', fontWeight: 700, margin: 0, fontSize: '1.1rem' }}>{job.serviceTitle}</h3>
-                      <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Client: {job.client?.name} ({job.address?.phone})</span>
+                      <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Client: {job.client?.name} ({job.address?.phone || 'No phone'})</span>
                     </div>
                     <span style={{
-                      background: job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                      color: job.status === 'IN_PROGRESS' ? '#38bdf8' : '#22c55e',
-                      border: `1px solid ${job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+                      background: job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? '#22c55e' : job.status === 'IN_PROGRESS' ? '#38bdf8' : '#f59e0b',
+                      border: `1px solid ${job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.3)' : job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
                       padding: '0.2rem 0.6rem',
                       borderRadius: '10px',
                       fontSize: '0.75rem',
                       fontWeight: 800,
                     }}>
-                      {job.status}
+                      {job.status === 'CONFIRMED' || job.paymentStatus === 'PAID'
+                        ? '✅ CONFIRMED & PAID'
+                        : job.status === 'IN_PROGRESS'
+                        ? '🛠️ IN PROGRESS'
+                        : '⏳ ACCEPTED (Awaiting Payment)'}
                     </span>
                   </div>
 
                   <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '1rem' }}>
                     <div>📅 {new Date(job.scheduledDate).toLocaleDateString()} ({job.timeSlot})</div>
                     <div>📍 Address: {job.address?.houseFlat}, {job.address?.streetArea}, {job.address?.city}</div>
-                    <div style={{ color: '#38bdf8', fontWeight: 700, marginTop: '0.3rem' }}>Collect Cash: ₹{job.totalAmount}</div>
+                    {job.paymentStatus === 'PAID' ? (
+                      <div style={{ color: '#22c55e', fontWeight: 700, marginTop: '0.3rem' }}>
+                        ✅ Payment Received via Razorpay: ₹{job.totalAmount} (ID: {job.razorpayPaymentId || 'Paid'})
+                      </div>
+                    ) : (
+                      <div style={{ color: '#f59e0b', fontWeight: 700, marginTop: '0.3rem' }}>
+                        ⏳ Customer Payment Pending: ₹{job.totalAmount}
+                      </div>
+                    )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    {job.status === 'ACCEPTED' && (
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {(job.status === 'ACCEPTED' || job.status === 'CONFIRMED') && (
                       <button
                         onClick={() => handleUpdateStatus(job._id, 'IN_PROGRESS')}
                         disabled={submittingAction}
@@ -609,7 +732,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                   </div>
                   <div className="freelancer-stat-box">
                     <div className="freelancer-stat-number">₹{totalCreditsEarned}</div>
-                    <div className="freelancer-stat-label">cash earned</div>
+                    <div className="freelancer-stat-label">total earned</div>
                   </div>
                   <div className="freelancer-stat-box">
                     <div className="freelancer-stat-number">{completedJobs.length}</div>
@@ -626,7 +749,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
 
                 <div className="freelancer-balance-amount-row">
                   <span className="freelancer-balance-number">₹{totalCreditsEarned}</span>
-                  <span className="freelancer-balance-unit">total cash collected</span>
+                  <span className="freelancer-balance-unit">total earnings</span>
                 </div>
 
                 <div className="freelancer-progress-bar-bg">
@@ -634,7 +757,7 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                 </div>
 
                 <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                  Keep accepting booking requests to earn more cash directly from customers after work completion.
+                  Accept booking requests and receive earnings directly via online Razorpay or cash.
                 </div>
               </div>
             </div>
@@ -657,11 +780,19 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                         <div>
                           <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '1.05rem' }}>{job.serviceTitle}</div>
                           <div style={{ fontSize: '0.83rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                            Customer: <strong style={{ color: '#ffffff' }}>{job.client?.name || 'Customer'}</strong> ({job.address?.phone}) · Date: {new Date(job.scheduledDate).toLocaleDateString()}
+                            Customer: <strong style={{ color: '#ffffff' }}>{job.client?.name || 'Customer'}</strong> ({job.address?.phone || 'No phone'}) · Date: {new Date(job.scheduledDate).toLocaleDateString()}
                           </div>
                         </div>
-                        <span style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', padding: '0.25rem 0.65rem', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 800 }}>
-                          ₹{job.totalAmount} (Cash Collected)
+                        <span style={{
+                          background: job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                          color: job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? '#38bdf8' : '#22c55e',
+                          border: `1px solid ${job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+                          padding: '0.25rem 0.65rem',
+                          borderRadius: '10px',
+                          fontSize: '0.78rem',
+                          fontWeight: 800
+                        }}>
+                          ₹{job.totalAmount} {job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? '(Paid via Razorpay)' : '(Cash Collected)'}
                         </span>
                       </div>
 
@@ -880,6 +1011,77 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                 {submittingReview ? 'Submitting Review...' : 'Submit Customer Rating & Review ↗'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE WORK DOMAINS MODAL */}
+      {isSkillsModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-box glass-panel" style={{ background: '#0b1329', borderColor: 'rgba(56, 189, 248, 0.3)', maxWidth: '520px' }}>
+            <div className="modal-header">
+              <div className="modal-title-wrapper" style={{ color: '#38bdf8' }}>
+                <Zap size={20} />
+                <span>Manage Work Domains</span>
+              </div>
+              <button className="close-btn-modern" onClick={() => setIsSkillsModalOpen(false)}><X size={18} /></button>
+            </div>
+
+            <div className="modal-body" style={{ paddingTop: '1.25rem' }}>
+              <p className="text-muted text-sm mb-3" style={{ color: '#94a3b8', fontSize: '0.88rem' }}>
+                Select all domains you specialize in. You will receive booking requests for all selected categories!
+              </p>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', margin: '1.25rem 0' }}>
+                {DOMAIN_OPTIONS.map((domain) => {
+                  const isSelected = freelancerSkills.includes(domain);
+                  return (
+                    <button
+                      key={domain}
+                      type="button"
+                      onClick={() => handleToggleDomainSkill(domain)}
+                      style={{
+                        background: isSelected
+                          ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(37, 99, 235, 0.35))'
+                          : 'rgba(255, 255, 255, 0.04)',
+                        border: `1px solid ${isSelected ? 'rgba(56, 189, 248, 0.6)' : 'rgba(255, 255, 255, 0.1)'}`,
+                        color: isSelected ? '#38bdf8' : '#cbd5e1',
+                        padding: '0.5rem 0.85rem',
+                        borderRadius: '20px',
+                        fontSize: '0.82rem',
+                        fontWeight: isSelected ? 800 : 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {isSelected ? '✓ ' : '+ '} {domain}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {freelancerSkills.length === 0 && (
+                <div style={{ fontSize: '0.8rem', color: '#f59e0b', marginBottom: '1rem', fontStyle: 'italic' }}>
+                  ⚠️ Please select at least one domain to receive requests.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+                <button
+                  onClick={() => setIsSkillsModalOpen(false)}
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', padding: '0.75rem', borderRadius: '10px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveSkills}
+                  disabled={submittingSkills}
+                  style={{ flex: 2, background: 'linear-gradient(135deg, #0284c7, #2563eb)', border: 'none', color: '#ffffff', padding: '0.75rem', borderRadius: '10px', fontWeight: 800, cursor: 'pointer', opacity: submittingSkills ? 0.6 : 1 }}
+                >
+                  {submittingSkills ? 'Saving Work Domains...' : 'Save Work Domains'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

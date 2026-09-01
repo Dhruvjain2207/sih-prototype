@@ -28,9 +28,26 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
-  const [skills, setSkills] = useState('');
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [bio, setBio] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const DOMAIN_OPTIONS = [
+    'Plumbing',
+    'Electrician',
+    'House Cleaning',
+    'Cook / Chef',
+    'Carpentry & Woodwork',
+    'Painting & Decorating',
+    'AC & Appliance Repair',
+    'Gardening & Lawn Care',
+  ];
+
+  const toggleSkill = (domain: string) => {
+    setSelectedSkills((prev) =>
+      prev.includes(domain) ? prev.filter((s) => s !== domain) : [...prev, domain]
+    );
+  };
 
   // OTP State (6 Digits)
   const [otpValues, setOtpValues] = useState<string[]>(Array(6).fill(''));
@@ -101,7 +118,7 @@ export default function Register() {
           password: password || undefined,
           role,
           phone: role === 'freelancer' ? phone : undefined,
-          skills: role === 'freelancer' ? skills : undefined,
+          skills: role === 'freelancer' ? selectedSkills : undefined,
           bio: role === 'freelancer' ? bio : undefined,
         }),
       });
@@ -324,35 +341,39 @@ export default function Register() {
                       </div>
 
                       <div className={styles['input-group']}>
-                        <label>Primary Work Specialization</label>
-                        <div className={styles['input-wrapper']}>
-                          <select
-                            value={skills}
-                            onChange={(e) => setSkills(e.target.value)}
-                            required
-                            style={{
-                              width: '100%',
-                              backgroundColor: '#050505',
-                              border: '1px solid #333',
-                              color: '#fff',
-                              padding: '0.9rem 1rem',
-                              borderRadius: '8px',
-                              fontSize: '0.95rem',
-                              outline: 'none',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <option value="" disabled>Select Work Specialization...</option>
-                            <option value="Plumbing">Plumbing</option>
-                            <option value="Electrician">Electrician</option>
-                            <option value="House Cleaning">House Cleaning</option>
-                            <option value="Cook / Chef">Cook / Chef</option>
-                            <option value="Carpentry & Woodwork">Carpentry & Woodwork</option>
-                            <option value="Painting & Decorating">Painting & Decorating</option>
-                            <option value="AC & Appliance Repair">AC & Appliance Repair</option>
-                            <option value="Gardening & Lawn Care">Gardening & Lawn Care</option>
-                          </select>
+                        <label>Select Your Work Domains (Select all that apply) *</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.4rem' }}>
+                          {DOMAIN_OPTIONS.map((domain) => {
+                            const isSelected = selectedSkills.includes(domain);
+                            return (
+                              <button
+                                key={domain}
+                                type="button"
+                                onClick={() => toggleSkill(domain)}
+                                style={{
+                                  background: isSelected
+                                    ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(37, 99, 235, 0.35))'
+                                    : 'rgba(255, 255, 255, 0.04)',
+                                  border: `1px solid ${isSelected ? 'rgba(56, 189, 248, 0.6)' : 'rgba(255, 255, 255, 0.1)'}`,
+                                  color: isSelected ? '#38bdf8' : '#cbd5e1',
+                                  padding: '0.5rem 0.85rem',
+                                  borderRadius: '20px',
+                                  fontSize: '0.82rem',
+                                  fontWeight: isSelected ? 800 : 500,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {isSelected ? '✓ ' : '+ '} {domain}
+                              </button>
+                            );
+                          })}
                         </div>
+                        {selectedSkills.length === 0 && (
+                          <div style={{ fontSize: '0.75rem', color: '#f59e0b', marginTop: '0.4rem' }}>
+                            ⚠️ Please select at least one work domain to receive customer requests.
+                          </div>
+                        )}
                       </div>
 
                       <div className={styles['input-group']}>

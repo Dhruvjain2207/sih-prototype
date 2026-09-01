@@ -19,9 +19,14 @@ export interface IBooking extends Document {
   problemDescription: string;
   client: any;
   provider: any;
-  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED" | "IN_PROGRESS" | "COMPLETED";
+  status: "PENDING" | "ACCEPTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "IN_PROGRESS" | "COMPLETED";
   totalAmount: number;
-  paymentMethod: "CASH_AFTER_WORK";
+  paymentMethod: "RAZORPAY" | "CASH_AFTER_WORK";
+  paymentStatus: "PENDING" | "PAID" | "FAILED";
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  paidAt?: Date;
   scheduledDate: Date;
   timeSlot: string;
   address: IAddress;
@@ -85,7 +90,7 @@ const BookingSchema = new Schema<IBooking>(
     },
     status: {
       type: String,
-      enum: ["PENDING", "ACCEPTED", "REJECTED", "CANCELLED", "IN_PROGRESS", "COMPLETED"],
+      enum: ["PENDING", "ACCEPTED", "CONFIRMED", "REJECTED", "CANCELLED", "IN_PROGRESS", "COMPLETED"],
       default: "PENDING",
       uppercase: true,
     },
@@ -95,8 +100,19 @@ const BookingSchema = new Schema<IBooking>(
     },
     paymentMethod: {
       type: String,
-      default: "CASH_AFTER_WORK",
+      enum: ["RAZORPAY", "CASH_AFTER_WORK"],
+      default: "RAZORPAY",
     },
+    paymentStatus: {
+      type: String,
+      enum: ["PENDING", "PAID", "FAILED"],
+      default: "PENDING",
+      uppercase: true,
+    },
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String },
+    paidAt: { type: Date },
     scheduledDate: {
       type: Date,
       required: true,

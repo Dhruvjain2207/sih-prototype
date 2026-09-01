@@ -24,6 +24,7 @@ import {
   Search,
   Menu,
   Star,
+  CreditCard,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './client.css';
@@ -316,6 +317,97 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     }
   };
 
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const handleRazorpayPayment = async (booking: any) => {
+    const isLoaded = await loadRazorpayScript();
+    if (!isLoaded) {
+      toast.error('Razorpay SDK failed to load. Please check your network connection.');
+      return;
+    }
+
+    const toastId = toast.loading('Initializing Razorpay Test mode payment...');
+
+    try {
+      const orderRes = await fetch('/api/payments/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: booking._id }),
+      });
+
+      const orderData = await orderRes.json();
+
+      if (!orderRes.ok || !orderData.success) {
+        toast.error(orderData.error || 'Failed to create payment order', { id: toastId });
+        return;
+      }
+
+      toast.dismiss(toastId);
+
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: 'CoopConnect Services',
+        description: `Payment for ${booking.serviceTitle}`,
+        order_id: orderData.orderId,
+        handler: async function (response: any) {
+          const verifyToastId = toast.loading('Verifying Razorpay payment signature...');
+          try {
+            const verifyRes = await fetch('/api/payments/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                bookingId: booking._id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+
+            const verifyData = await verifyRes.json();
+            if (verifyRes.ok && verifyData.success) {
+              toast.success('Payment Successful! Booking Confirmed 🎉', { id: verifyToastId, duration: 5000 });
+              fetchData();
+            } else {
+              toast.error(verifyData.error || 'Payment verification failed', { id: verifyToastId });
+            }
+          } catch {
+            toast.error('Network error during payment verification', { id: verifyToastId });
+          }
+        },
+        prefill: {
+          name: session?.user?.name || booking.address?.fullName || '',
+          email: session?.user?.email || '',
+          contact: booking.address?.phone || '',
+        },
+        theme: {
+          color: '#6366f1',
+        },
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      paymentObject.on('payment.failed', function (response: any) {
+        toast.error(`Payment failed: ${response.error?.description || 'Transaction cancelled'}`);
+      });
+      paymentObject.open();
+    } catch (err: any) {
+      toast.error(err.message || 'Error starting Razorpay checkout', { id: toastId });
+    }
+  };
+
   const userInitials = session?.user?.name
     ? session.user.name
         .split(' ')
@@ -325,7 +417,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         .toUpperCase()
     : 'US';
 
-  const activeBookings = bookings.filter((b) => b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS');
+  const activeBookings = bookings.filter((b) => b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS');
   const pastBookings = bookings.filter((b) => b.status === 'COMPLETED' || b.status === 'REJECTED' || b.status === 'CANCELLED');
 
   const filteredCategories = SERVICE_CATEGORIES.filter((c) =>
@@ -708,18 +800,24 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                   <div key={b._id} style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                           <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>{b.serviceTitle}</h3>
                           <span style={{
-                            background: b.status === 'ACCEPTED' ? 'rgba(34, 197, 94, 0.15)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                            color: b.status === 'ACCEPTED' ? '#22c55e' : b.status === 'IN_PROGRESS' ? '#38bdf8' : '#f59e0b',
-                            border: `1px solid ${b.status === 'ACCEPTED' ? 'rgba(34, 197, 94, 0.3)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                            background: b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : b.status === 'ACCEPTED' ? 'rgba(245, 158, 11, 0.15)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                            color: b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? '#22c55e' : b.status === 'ACCEPTED' ? '#f59e0b' : b.status === 'IN_PROGRESS' ? '#38bdf8' : '#94a3b8',
+                            border: `1px solid ${b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.3)' : b.status === 'ACCEPTED' ? 'rgba(245, 158, 11, 0.3)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(148, 163, 184, 0.3)'}`,
                             padding: '0.2rem 0.6rem',
                             borderRadius: '12px',
                             fontSize: '0.75rem',
                             fontWeight: 800,
                           }}>
-                            {b.status === 'PENDING' ? '⏳ PENDING (Awaiting Freelancer Accept)' : b.status === 'ACCEPTED' ? '✓ ACCEPTED BY FREELANCER' : '🛠️ IN PROGRESS'}
+                            {b.status === 'PENDING'
+                              ? '⏳ PENDING (Awaiting Freelancer Accept)'
+                              : b.status === 'ACCEPTED' && b.paymentStatus !== 'PAID'
+                              ? '✓ ACCEPTED BY FREELANCER (Payment Pending)'
+                              : b.status === 'CONFIRMED' || b.paymentStatus === 'PAID'
+                              ? '🎉 BOOKING CONFIRMED (PAID)'
+                              : '🛠️ IN PROGRESS'}
                           </span>
                         </div>
                         <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
@@ -729,7 +827,13 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
 
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8' }}>₹{b.totalAmount}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>💵 Cash Payment After Work</div>
+                        {b.paymentStatus === 'PAID' ? (
+                          <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 700 }}>✅ Paid via Razorpay Test</div>
+                        ) : b.status === 'ACCEPTED' ? (
+                          <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 700 }}>⚡ Freelancer Accepted - Ready to Pay</div>
+                        ) : (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Razorpay Test Mode</div>
+                        )}
                       </div>
                     </div>
 
@@ -737,6 +841,11 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                     <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', margin: '0.85rem 0', fontSize: '0.85rem' }}>
                       <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem Description:</div>
                       <div style={{ color: '#cbd5e1' }}>"{b.problemDescription || b.notes || 'No description provided'}"</div>
+                      {b.razorpayPaymentId && (
+                        <div style={{ color: '#22c55e', fontSize: '0.75rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                          Payment ID: {b.razorpayPaymentId}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.5rem' }}>
@@ -744,11 +853,35 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                         📅 Date: {new Date(b.scheduledDate).toLocaleDateString()} ({b.timeSlot}) · 📍 {b.address?.houseFlat}, {b.address?.streetArea}, {b.address?.city}
                       </div>
 
-                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* Razorpay Pay Now Button when Freelancer has Accepted */}
+                        {b.status === 'ACCEPTED' && b.paymentStatus !== 'PAID' && (
+                          <button
+                            onClick={() => handleRazorpayPayment(b)}
+                            style={{
+                              background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                              border: 'none',
+                              color: '#ffffff',
+                              padding: '0.55rem 1.1rem',
+                              borderRadius: '10px',
+                              fontSize: '0.85rem',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
+                            }}
+                          >
+                            <CreditCard size={16} /> Pay ₹{b.totalAmount} (Razorpay)
+                          </button>
+                        )}
+
                         <button onClick={() => setSelectedBookingDetail(b)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
                           View Details
                         </button>
-                        {(b.status === 'PENDING' || b.status === 'ACCEPTED') && (
+
+                        {(b.status === 'PENDING' || (b.status === 'ACCEPTED' && b.paymentStatus !== 'PAID')) && (
                           <button onClick={() => handleCancelBooking(b._id)} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
                             Cancel Request
                           </button>
@@ -791,8 +924,11 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                      Provider: {b.provider?.name || 'Assigned Expert'} · Date: {new Date(b.scheduledDate).toLocaleDateString()}
+                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.2rem' }}>
+                      <span>Provider: {b.provider?.name || 'Assigned Expert'} · Date: {new Date(b.scheduledDate).toLocaleDateString()}</span>
+                      <span style={{ color: b.paymentStatus === 'PAID' || b.paymentMethod === 'RAZORPAY' ? '#38bdf8' : '#22c55e', fontWeight: 700 }}>
+                        ₹{b.totalAmount} {b.paymentStatus === 'PAID' || b.paymentMethod === 'RAZORPAY' ? '(Paid via Razorpay)' : '(Cash)'}
+                      </span>
                     </div>
 
                     {b.problemDescription && (
@@ -877,187 +1013,240 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         )}
       </div>
 
-      {/* BOOKING MODAL (PREMIUM & RESPONSIVE DESIGN) */}
+      {/* BOOKING MODAL (REFINED & MODERN DESIGN) */}
       {selectedCategory && (
         <div className="modal-overlay">
-          <div className="modal-box-modern">
-            <div className="modal-header-modern">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-950 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                  {selectedCategory.icon ? <selectedCategory.icon size={20} /> : <Wrench size={20} />}
+          <div className="modal-box-modern" style={{ maxWidth: '600px', width: '92%', borderRadius: '20px', background: '#0b1329', border: '1px solid rgba(99, 102, 241, 0.25)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '1.25rem 1.5rem', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: selectedCategory.bg || 'rgba(99, 102, 241, 0.15)', color: selectedCategory.color || '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {selectedCategory.icon ? <selectedCategory.icon size={22} style={{ margin: 'auto' }} /> : <Wrench size={22} style={{ margin: 'auto' }} />}
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-white text-lg leading-tight">Book {selectedCategory.name}</h3>
-                  <span className="text-xs text-slate-400">Direct booking with verified experts</span>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>Book {selectedCategory.name}</h3>
+                  <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Connect with verified local experts</span>
                 </div>
               </div>
-              <button className="close-btn-modern" onClick={() => setSelectedCategory(null)}>
+              <button className="close-btn-modern" onClick={() => setSelectedCategory(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '0.4rem', borderRadius: '8px', cursor: 'pointer' }}>
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleBookServiceSubmit} className="modal-body-modern">
-              {/* Fee Snapshot Pill */}
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/20 mb-5">
+            <form onSubmit={handleBookServiceSubmit} style={{ padding: '1.5rem', maxHeight: '82vh', overflowY: 'auto' }}>
+              {/* PRICE & WORKFLOW BANNER */}
+              <div style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(56, 189, 248, 0.1))', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '14px', padding: '1rem 1.25rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <div>
-                  <span className="text-xs text-slate-400">Estimated Fee</span>
-                  <div className="text-xl font-black text-sky-400">₹{selectedCategory.price}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Service Rate</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#38bdf8' }}>₹{selectedCategory.price}</div>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 flex items-center gap-1">
-                  💵 Cash Payment After Work
-                </span>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)', color: '#4ade80', padding: '0.25rem 0.65rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                    ⚡ Request $\rightarrow$ Freelancer Accepts $\rightarrow$ Pay Online / Cash
+                  </span>
+                </div>
               </div>
 
               {/* STEP 1: Problem Description */}
-              <div className="modal-form-step-card">
-                <div className="modal-step-title">
-                  <span>1. Task / Problem Description *</span>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <FileText size={16} className="text-sky-400" />
+                  <span>1. Describe the Problem or Required Work *</span>
                 </div>
                 <textarea
                   rows={3}
-                  placeholder={`Describe your ${selectedCategory.name} issue (e.g., Water leaking under sink, switchboard repair, deep cleaning required)...`}
+                  placeholder={`Describe your ${selectedCategory.name} requirements (e.g., Leaking pipe under kitchen sink, main switchboard trip repair, full house deep cleaning)...`}
                   value={bookingForm.problemDescription}
                   onChange={(e) => setBookingForm({ ...bookingForm, problemDescription: e.target.value })}
                   required
-                  className="modal-input"
-                  style={{ resize: 'none' }}
+                  style={{
+                    width: '100%',
+                    background: '#030712',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    borderRadius: '10px',
+                    padding: '0.75rem',
+                    color: '#ffffff',
+                    outline: 'none',
+                    fontSize: '0.88rem',
+                    resize: 'none',
+                  }}
                 />
               </div>
 
-              {/* STEP 2: Customer Info */}
-              <div className="modal-form-step-card">
-                <div className="modal-step-title">
-                  <span>2. Customer Details</span>
+              {/* STEP 2: Customer Contact Info */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <User size={16} className="text-sky-400" />
+                  <span>2. Customer Contact Details</span>
                 </div>
-                <div className="modal-form-grid-2">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
                   <div>
-                    <label className="modal-label">Full Name *</label>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Full Name *</label>
                     <input
                       type="text"
-                      className="modal-input"
                       value={bookingForm.fullName}
                       onChange={(e) => setBookingForm({ ...bookingForm, fullName: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
                     />
                   </div>
                   <div>
-                    <label className="modal-label">Phone Number *</label>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Phone Number *</label>
                     <input
                       type="tel"
-                      className="modal-input"
                       placeholder="+91 98765 43210"
                       value={bookingForm.phone}
                       onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* STEP 3: Address */}
-              <div className="modal-form-step-card">
-                <div className="modal-step-title">
-                  <span>3. Service Location</span>
+              {/* STEP 3: Service Address */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <MapPin size={16} className="text-sky-400" />
+                  <span>3. Service Address / Location</span>
                 </div>
-                <div className="modal-form-grid-2">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '0.85rem' }}>
                   <div>
-                    <label className="modal-label">Flat / House No. *</label>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Flat / House / Apt No. *</label>
                     <input
                       type="text"
-                      className="modal-input"
-                      placeholder="e.g. Flat 302, Royal Apt"
+                      placeholder="e.g. Flat 402, Sunshine Towers"
                       value={bookingForm.houseFlat}
                       onChange={(e) => setBookingForm({ ...bookingForm, houseFlat: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
                     />
                   </div>
                   <div>
-                    <label className="modal-label">Street / Landmark *</label>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Street / Landmark *</label>
                     <input
                       type="text"
-                      className="modal-input"
-                      placeholder="e.g. Fraser Road"
+                      placeholder="e.g. Near Boring Road Crossing"
                       value={bookingForm.streetArea}
                       onChange={(e) => setBookingForm({ ...bookingForm, streetArea: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
                     />
                   </div>
                 </div>
 
-                <div className="modal-form-grid-3">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                   <div>
-                    <label className="modal-label">City *</label>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>City *</label>
                     <input
                       type="text"
-                      className="modal-input"
                       value={bookingForm.city}
                       onChange={(e) => setBookingForm({ ...bookingForm, city: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.55rem 0.75rem', color: '#ffffff', fontSize: '0.82rem', outline: 'none' }}
                     />
                   </div>
                   <div>
-                    <label className="modal-label">State *</label>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>State *</label>
                     <input
                       type="text"
-                      className="modal-input"
                       value={bookingForm.state}
                       onChange={(e) => setBookingForm({ ...bookingForm, state: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.55rem 0.75rem', color: '#ffffff', fontSize: '0.82rem', outline: 'none' }}
                     />
                   </div>
                   <div>
-                    <label className="modal-label">Pincode *</label>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Pincode *</label>
                     <input
                       type="text"
-                      className="modal-input"
                       value={bookingForm.pincode}
                       onChange={(e) => setBookingForm({ ...bookingForm, pincode: e.target.value })}
                       required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.55rem 0.75rem', color: '#ffffff', fontSize: '0.82rem', outline: 'none' }}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* STEP 4: Schedule */}
-              <div className="modal-form-step-card">
-                <div className="modal-step-title">
-                  <span>4. Preferred Date & Time</span>
+              {/* STEP 4: Preferred Date & Time */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Calendar size={16} className="text-sky-400" />
+                  <span>4. Preferred Date & Time Slot</span>
                 </div>
-                <div className="modal-form-grid-2">
-                  <div>
-                    <label className="modal-label">Date *</label>
-                    <input
-                      type="date"
-                      className="modal-input"
-                      value={bookingForm.scheduledDate}
-                      onChange={(e) => setBookingForm({ ...bookingForm, scheduledDate: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="modal-label">Time Slot *</label>
-                    <select
-                      className="modal-select"
-                      value={bookingForm.timeSlot}
-                      onChange={(e) => setBookingForm({ ...bookingForm, timeSlot: e.target.value })}
-                    >
-                      <option value="09:00 AM - 12:00 PM">09:00 AM - 12:00 PM</option>
-                      <option value="12:00 PM - 03:00 PM">12:00 PM - 03:00 PM</option>
-                      <option value="03:00 PM - 06:00 PM">03:00 PM - 06:00 PM</option>
-                      <option value="06:00 PM - 09:00 PM">06:00 PM - 09:00 PM</option>
-                    </select>
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Date *</label>
+                  <input
+                    type="date"
+                    value={bookingForm.scheduledDate}
+                    onChange={(e) => setBookingForm({ ...bookingForm, scheduledDate: e.target.value })}
+                    required
+                    style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.4rem' }}>Time Slot *</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem' }}>
+                    {[
+                      '09:00 AM - 12:00 PM',
+                      '12:00 PM - 03:00 PM',
+                      '03:00 PM - 06:00 PM',
+                      '06:00 PM - 09:00 PM',
+                    ].map((slot) => {
+                      const isSelected = bookingForm.timeSlot === slot;
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => setBookingForm({ ...bookingForm, timeSlot: slot })}
+                          style={{
+                            background: isSelected
+                              ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(56, 189, 248, 0.35))'
+                              : 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${isSelected ? '#6366f1' : 'rgba(255,255,255,0.08)'}`,
+                            color: isSelected ? '#ffffff' : '#cbd5e1',
+                            padding: '0.55rem 0.4rem',
+                            borderRadius: '10px',
+                            fontSize: '0.75rem',
+                            fontWeight: isSelected ? 800 : 500,
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {slot}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
               {/* Submit CTA */}
               <button
-                className="btn-gradient-full mt-2"
                 type="submit"
                 disabled={submittingBooking}
-                style={{ padding: '0.95rem', borderRadius: '14px', fontSize: '0.95rem', fontWeight: 800 }}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '0.95rem',
+                  borderRadius: '14px',
+                  fontSize: '0.95rem',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 20px rgba(99, 102, 241, 0.4)',
+                  opacity: submittingBooking ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                }}
               >
-                {submittingBooking ? 'Finding Available Expert & Requesting...' : `Request ${selectedCategory.name} Expert ↗`}
+                {submittingBooking ? 'Finding Available Experts & Requesting...' : `Request ${selectedCategory.name} Expert (₹${selectedCategory.price}) ↗`}
               </button>
             </form>
           </div>

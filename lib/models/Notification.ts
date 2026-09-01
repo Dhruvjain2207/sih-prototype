@@ -9,7 +9,8 @@ export interface INotification extends Document {
     | "BOOKING_REJECTED"
     | "BOOKING_CANCELLED"
     | "SERVICE_STARTED"
-    | "SERVICE_COMPLETED";
+    | "SERVICE_COMPLETED"
+    | "PAYMENT_SUCCESS";
   title: string;
   message: string;
   booking?: any;
@@ -38,6 +39,7 @@ const NotificationSchema = new Schema<INotification>(
         "BOOKING_CANCELLED",
         "SERVICE_STARTED",
         "SERVICE_COMPLETED",
+        "PAYMENT_SUCCESS",
       ],
       required: true,
     },
