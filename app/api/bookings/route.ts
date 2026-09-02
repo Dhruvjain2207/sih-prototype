@@ -36,36 +36,76 @@ export async function GET() {
         (skill) => new RegExp(skill.replace(/[^a-zA-Z0-9]/g, ".*"), "i")
       );
 
-      // Query 1: Pending jobs matching this freelancer's category skills
-      const pendingMatchQuery: any = { status: "PENDING" };
+      // Query 1A: Pending single jobs matching this freelancer's category skills
+      const singlePendingQuery: any = {
+        isBulk: { $ne: true },
+        status: "PENDING",
+      };
       if (skillRegexes.length > 0) {
-        pendingMatchQuery.$or = [
+        singlePendingQuery.$or = [
           { category: { $in: skillRegexes } },
           { serviceTitle: { $in: skillRegexes } },
         ];
       }
 
-      // Query 2: Jobs accepted/completed by THIS specific freelancer
-      const myJobsQuery: any = {
-        $or: [{ provider: userId }, { provider: session.user.id }],
+      // Query 1B: Available bulk jobs with remaining units > 0 matching skills
+      const bulkPendingQuery: any = {
+        isBulk: true,
+        remainingUnits: { $gt: 0 },
+        status: { $in: ["PENDING", "PARTIALLY_ACCEPTED"] },
+      };
+      if (skillRegexes.length > 0) {
+        bulkPendingQuery.$or = [
+          { selectedServices: { $in: skillRegexes } },
+          { category: { $in: skillRegexes } },
+          { serviceTitle: { $in: skillRegexes } },
+        ];
+      }
+
+      // Query 2: Jobs claimed/accepted/completed by THIS specific freelancer
+      const userQueryIds = [userId];
+      if (session.user.id && session.user.id !== userId?.toString()) {
+        userQueryIds.push(session.user.id);
+      }
+
+      const mySingleJobsQuery: any = {
+        isBulk: { $ne: true },
+        provider: { $in: userQueryIds },
         status: { $ne: "PENDING" },
       };
 
-      const [pendingBookings, myAcceptedBookings] = await Promise.all([
-        Booking.find(pendingMatchQuery)
+      const myBulkJobsQuery: any = {
+        isBulk: true,
+        "assignments.provider": { $in: userQueryIds },
+      };
+
+      const [pendingSingle, pendingBulk, mySingleJobs, myBulkJobs] = await Promise.all([
+        Booking.find(singlePendingQuery)
           .populate("client", "name email phone image")
           .populate("gig")
           .sort({ createdAt: -1 }),
-        Booking.find(myJobsQuery)
+        Booking.find(bulkPendingQuery)
           .populate("client", "name email phone image")
+          .populate("assignments.provider", "name email phone image rating skills")
+          .populate("gig")
+          .sort({ createdAt: -1 }),
+        Booking.find(mySingleJobsQuery)
+          .populate("client", "name email phone image")
+          .populate("gig")
+          .sort({ createdAt: -1 }),
+        Booking.find(myBulkJobsQuery)
+          .populate("client", "name email phone image")
+          .populate("assignments.provider", "name email phone image rating skills")
           .populate("gig")
           .sort({ createdAt: -1 }),
       ]);
 
-      // Combine both lists (avoiding duplicates)
+      // Combine lists avoiding duplicates
       const bookingMap = new Map();
-      pendingBookings.forEach((b) => bookingMap.set(b._id.toString(), b));
-      myAcceptedBookings.forEach((b) => bookingMap.set(b._id.toString(), b));
+      pendingSingle.forEach((b) => bookingMap.set(b._id.toString(), b));
+      pendingBulk.forEach((b) => bookingMap.set(b._id.toString(), b));
+      mySingleJobs.forEach((b) => bookingMap.set(b._id.toString(), b));
+      myBulkJobs.forEach((b) => bookingMap.set(b._id.toString(), b));
 
       bookings = Array.from(bookingMap.values()).sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -75,6 +115,7 @@ export async function GET() {
         $or: [{ client: userId }, { client: session.user.id }],
       })
         .populate("provider", "name email phone image rating skills bio")
+        .populate("assignments.provider", "name email phone image rating skills bio")
         .populate("gig")
         .sort({ createdAt: -1 });
     }
@@ -113,7 +154,7 @@ export async function GET() {
   }
 }
 
-// POST /api/bookings - Create new booking for a category
+// POST /api/bookings - Create new single or bulk booking
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -131,11 +172,16 @@ export async function POST(req: Request) {
       scheduledDate,
       timeSlot,
       address,
+      // Bulk Booking parameters
+      isBulk = false,
+      totalUnits = 1,
+      unitType = "household",
+      selectedServices = [],
     } = body;
 
     // Address & Problem Description Validation
     if (!address || !address.fullName || !address.phone || !address.houseFlat || !address.streetArea || !address.city || !address.state || !address.pincode) {
-      return NextResponse.json({ error: "Complete service address (Flat, Street, City, State, Pincode) is required." }, { status: 400 });
+      return NextResponse.json({ error: "Complete service address (Flat/House, Street/Society, City, State, Pincode) is required." }, { status: 400 });
     }
 
     if (!problemDescription || !problemDescription.trim()) {
@@ -167,74 +213,159 @@ export async function POST(req: Request) {
     }
 
     const clientId = dbClient._id;
-    const targetCategory = requestedCategory || "Plumbing";
-    const finalServiceTitle = requestedTitle || `${targetCategory} Service`;
-    const finalPrice = 0; // Awaiting Freelancer Quote
 
-    // 1. Find ALL Freelancers matching this specific category skill
-    const categoryKeyword = targetCategory.split(" ")[0].replace(/[^a-zA-Z]/g, "");
-    let matchingFreelancers = await User.find({
-      role: "freelancer",
-      skills: { $elemMatch: { $regex: new RegExp(categoryKeyword, "i") } },
-    });
+    if (isBulk) {
+      // BULK BOOKING FLOW
+      const parsedUnits = Math.max(1, parseInt(String(totalUnits), 10) || 1);
+      const servicesList: string[] = Array.isArray(selectedServices) && selectedServices.length > 0
+        ? selectedServices
+        : [requestedCategory || "General Maintenance"];
 
-    if (!matchingFreelancers || matchingFreelancers.length === 0) {
-      matchingFreelancers = await User.find({ role: "freelancer" });
+      const bulkCategory = servicesList.join(", ");
+      const bulkTitle = requestedTitle || `Bulk Booking: ${parsedUnits} ${unitType === "household" ? "Households" : unitType} (${bulkCategory})`;
+
+      // 1. Find all freelancers matching ANY of the selected services
+      const skillKeywords = servicesList.map((s) => s.split(" ")[0].replace(/[^a-zA-Z]/g, ""));
+      const skillRegexes = skillKeywords.map((kw) => new RegExp(kw, "i"));
+
+      let matchingFreelancers = await User.find({
+        role: "freelancer",
+        skills: { $elemMatch: { $in: skillRegexes } },
+      });
+
+      if (!matchingFreelancers || matchingFreelancers.length === 0) {
+        matchingFreelancers = await User.find({ role: "freelancer" });
+      }
+
+      // 2. Create Bulk Booking
+      const newBooking = await Booking.create({
+        isBulk: true,
+        totalUnits: parsedUnits,
+        remainingUnits: parsedUnits,
+        unitType: unitType || "household",
+        selectedServices: servicesList,
+        category: bulkCategory,
+        serviceTitle: bulkTitle,
+        problemDescription: problemDescription.trim(),
+        client: clientId,
+        status: "PENDING",
+        totalAmount: 0,
+        paymentMethod: "CASH_AFTER_WORK",
+        scheduledDate: new Date(scheduledDate),
+        timeSlot: timeSlot || "09:00 AM - 12:00 PM",
+        address: {
+          fullName: address.fullName,
+          phone: address.phone,
+          houseFlat: address.houseFlat,
+          streetArea: address.streetArea,
+          landmark: address.landmark || "",
+          city: address.city,
+          state: address.state,
+          pincode: address.pincode,
+          instructions: address.instructions || "",
+        },
+        notes: problemDescription.trim(),
+        assignments: [],
+      });
+
+      // 3. Notify all matching freelancers about bulk opportunity
+      const clientName = dbClient.name || session.user.name || "A client";
+      const notificationPromises = matchingFreelancers.map((fl) =>
+        Notification.create({
+          recipient: fl._id,
+          sender: clientId,
+          type: "NEW_BOOKING",
+          title: `🏢 Bulk Request: ${parsedUnits} ${unitType === "household" ? "Households" : unitType}`,
+          message: `${clientName} posted a bulk service request for ${parsedUnits} ${unitType}s (${bulkCategory}) on ${new Date(scheduledDate).toLocaleDateString()} (${timeSlot}). Claim full or partial units now!`,
+          booking: newBooking._id,
+          isRead: false,
+        })
+      );
+      await Promise.all(notificationPromises);
+
+      const populatedBooking = await Booking.findById(newBooking._id)
+        .populate("client", "name email phone image")
+        .populate("assignments.provider", "name email phone image rating skills");
+
+      return NextResponse.json({
+        success: true,
+        message: `Bulk booking request for ${parsedUnits} ${unitType}s dispatched to available local experts!`,
+        booking: populatedBooking,
+      });
+    } else {
+      // SINGLE SERVICE BOOKING FLOW
+      const targetCategory = requestedCategory || "Plumbing";
+      const finalServiceTitle = requestedTitle || `${targetCategory} Service`;
+
+      // 1. Find Freelancers matching this specific category skill
+      const categoryKeyword = targetCategory.split(" ")[0].replace(/[^a-zA-Z]/g, "");
+      let matchingFreelancers = await User.find({
+        role: "freelancer",
+        skills: { $elemMatch: { $regex: new RegExp(categoryKeyword, "i") } },
+      });
+
+      if (!matchingFreelancers || matchingFreelancers.length === 0) {
+        matchingFreelancers = await User.find({ role: "freelancer" });
+      }
+
+      // 2. Create Single Booking
+      const newBooking = await Booking.create({
+        gig: gigId || undefined,
+        isBulk: false,
+        totalUnits: 1,
+        remainingUnits: 1,
+        category: targetCategory,
+        serviceTitle: finalServiceTitle,
+        problemDescription: problemDescription.trim(),
+        client: clientId,
+        provider: matchingFreelancers.length === 1 ? matchingFreelancers[0]._id : undefined,
+        status: "PENDING",
+        totalAmount: 0,
+        paymentMethod: "CASH_AFTER_WORK",
+        scheduledDate: new Date(scheduledDate),
+        timeSlot: timeSlot || "09:00 AM - 12:00 PM",
+        address: {
+          fullName: address.fullName,
+          phone: address.phone,
+          houseFlat: address.houseFlat,
+          streetArea: address.streetArea,
+          landmark: address.landmark || "",
+          city: address.city,
+          state: address.state,
+          pincode: address.pincode,
+          instructions: address.instructions || "",
+        },
+        notes: problemDescription.trim(),
+      });
+
+      // 3. Notify matching category freelancers
+      const clientName = dbClient.name || session.user.name || "A customer";
+      const notificationPromises = matchingFreelancers.map((fl) =>
+        Notification.create({
+          recipient: fl._id,
+          sender: clientId,
+          type: "NEW_BOOKING",
+          title: `New Request: ${finalServiceTitle}`,
+          message: `${clientName} requested ${targetCategory} service on ${new Date(scheduledDate).toLocaleDateString()} (${timeSlot}). Problem: "${problemDescription.trim().slice(0, 60)}..."`,
+          booking: newBooking._id,
+          isRead: false,
+        })
+      );
+      await Promise.all(notificationPromises);
+
+      const populatedBooking = await Booking.findById(newBooking._id)
+        .populate("provider", "name email phone image rating skills")
+        .populate("client", "name email phone image");
+
+      return NextResponse.json({
+        success: true,
+        message: `Booking request dispatched to available ${targetCategory} experts!`,
+        booking: populatedBooking,
+      });
     }
-
-    // 2. Create Booking in Database with PENDING status & unassigned provider
-    const newBooking = await Booking.create({
-      gig: gigId || undefined,
-      category: targetCategory,
-      serviceTitle: finalServiceTitle,
-      problemDescription: problemDescription.trim(),
-      client: clientId,
-      provider: matchingFreelancers.length === 1 ? matchingFreelancers[0]._id : undefined,
-      status: "PENDING",
-      totalAmount: 0,
-      paymentMethod: "CASH_AFTER_WORK",
-      scheduledDate: new Date(scheduledDate),
-      timeSlot: timeSlot || "09:00 AM - 12:00 PM",
-      address: {
-        fullName: address.fullName,
-        phone: address.phone,
-        houseFlat: address.houseFlat,
-        streetArea: address.streetArea,
-        landmark: address.landmark || "",
-        city: address.city,
-        state: address.state,
-        pincode: address.pincode,
-        instructions: address.instructions || "",
-      },
-      notes: problemDescription.trim(),
-    });
-
-    // 3. Notify all matching category freelancers
-    const clientName = dbClient.name || session.user.name || "A customer";
-    const notificationPromises = matchingFreelancers.map((fl) =>
-      Notification.create({
-        recipient: fl._id,
-        sender: clientId,
-        type: "NEW_BOOKING",
-        title: `New Request: ${finalServiceTitle}`,
-        message: `${clientName} requested ${targetCategory} service on ${new Date(scheduledDate).toLocaleDateString()} (${timeSlot}). Problem: "${problemDescription.trim().slice(0, 60)}..."`,
-        booking: newBooking._id,
-        isRead: false,
-      })
-    );
-    await Promise.all(notificationPromises);
-
-    const populatedBooking = await Booking.findById(newBooking._id)
-      .populate("provider", "name email phone image rating skills")
-      .populate("client", "name email phone image");
-
-    return NextResponse.json({
-      success: true,
-      message: `Booking request dispatched to available ${targetCategory} experts!`,
-      booking: populatedBooking,
-    });
   } catch (error: any) {
     console.error("POST /api/bookings error:", error);
     return NextResponse.json({ error: error.message || "Failed to create booking" }, { status: 500 });
   }
 }
+

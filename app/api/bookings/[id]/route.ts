@@ -21,6 +21,7 @@ export async function GET(
     const booking = await Booking.findById(id)
       .populate("client", "name email phone image")
       .populate("provider", "name email phone image rating skills bio")
+      .populate("assignments.provider", "name email phone image rating skills bio")
       .populate("gig");
 
     if (!booking) {
@@ -40,12 +41,19 @@ export async function GET(
       booking.client?._id?.toString() === sessionUserId ||
       (userMongoId && (booking.client?.toString() === userMongoId || booking.client?._id?.toString() === userMongoId));
 
-    const isProvider =
+    const isSingleProvider =
       booking.provider?.toString() === sessionUserId ||
       booking.provider?._id?.toString() === sessionUserId ||
       (userMongoId && (booking.provider?.toString() === userMongoId || booking.provider?._id?.toString() === userMongoId));
 
-    if (!isClient && !isProvider && session.user.role !== "admin") {
+    const isBulkProvider =
+      booking.isBulk &&
+      booking.assignments?.some((a: any) => {
+        const provId = a.provider?._id?.toString() || a.provider?.toString();
+        return provId === sessionUserId || (userMongoId && provId === userMongoId);
+      });
+
+    if (!isClient && !isSingleProvider && !isBulkProvider && session.user.role !== "admin" && session.user.role !== "freelancer") {
       return NextResponse.json({ error: "Forbidden: You are not authorized to view this booking." }, { status: 403 });
     }
 
@@ -56,7 +64,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/bookings/[id] - Update booking status
+// PATCH /api/bookings/[id] - Update booking or bulk assignment status
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -69,11 +77,17 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await req.json();
-    const { status: targetStatus, rejectionReason, quotedPrice, paymentMethod } = body;
-
-    if (!targetStatus) {
-      return NextResponse.json({ error: "Target status is required" }, { status: 400 });
-    }
+    const {
+      status: targetStatus,
+      rejectionReason,
+      quotedPrice,
+      paymentMethod,
+      // Bulk specific params
+      action,
+      assignmentId,
+      unitsClaimed,
+      quotedPricePerUnit,
+    } = body;
 
     await connectToDatabase();
     const booking = await Booking.findById(id);
@@ -89,23 +103,321 @@ export async function PATCH(
 
     const sessionUserId = session.user.id;
     const userMongoId = dbUser?._id?.toString();
+    const currentUserId = userMongoId || sessionUserId;
 
     const isClient =
       booking.client?.toString() === sessionUserId ||
       booking.client?._id?.toString() === sessionUserId ||
       (userMongoId && (booking.client?.toString() === userMongoId || booking.client?._id?.toString() === userMongoId));
 
-    const isProvider =
+    const isSingleProvider =
       booking.provider?.toString() === sessionUserId ||
       booking.provider?._id?.toString() === sessionUserId ||
       (userMongoId && (booking.provider?.toString() === userMongoId || booking.provider?._id?.toString() === userMongoId));
 
-    const currentStatus = booking.status.toUpperCase();
-    const requestedStatus = targetStatus.toUpperCase();
+    // =========================================================================
+    // BULK BOOKING ACTION 1: CLAIM UNITS (FULL OR PARTIAL)
+    // =========================================================================
+    if (booking.isBulk && (action === "CLAIM_BULK_UNITS" || (targetStatus === "ACCEPTED" && !assignmentId))) {
+      const currentRemaining = booking.remainingUnits ?? booking.totalUnits ?? 0;
+      if (currentRemaining <= 0) {
+        return NextResponse.json(
+          { error: "All units for this bulk request have already been claimed by other service experts." },
+          { status: 400 }
+        );
+      }
 
-    // Authorization & State Machine Validation
+      const availableUnits = currentRemaining;
+      const requestedUnits = parseInt(String(unitsClaimed || body.units || availableUnits), 10);
+
+      if (isNaN(requestedUnits) || requestedUnits <= 0) {
+        return NextResponse.json({ error: "Please specify a valid number of units/households to claim." }, { status: 400 });
+      }
+
+      if (requestedUnits > availableUnits) {
+        return NextResponse.json(
+          { error: `Only ${availableUnits} units remain available for this request.` },
+          { status: 400 }
+        );
+      }
+
+      // Calculate unit rate & total for this claim
+      let unitPrice = Number(quotedPricePerUnit);
+      if (!unitPrice || unitPrice <= 0) {
+        if (quotedPrice && Number(quotedPrice) > 0) {
+          unitPrice = Number(quotedPrice) / requestedUnits;
+        } else {
+          return NextResponse.json(
+            { error: "Please enter a valid quoted price (₹) per household/unit to accept." },
+            { status: 400 }
+          );
+        }
+      }
+
+      const assignmentTotal = Math.round(unitPrice * requestedUnits);
+
+      // Create new assignment in assignments array
+      const newAssignment: any = {
+        provider: currentUserId,
+        unitsClaimed: requestedUnits,
+        quotedPricePerUnit: unitPrice,
+        totalAmount: assignmentTotal,
+        status: "ACCEPTED",
+        paymentStatus: "PENDING",
+        paymentMethod: "CASH_AFTER_WORK",
+        claimedAt: new Date(),
+        notes: body.notes || "",
+      };
+
+      if (!booking.assignments) {
+        booking.assignments = [];
+      }
+      booking.assignments.push(newAssignment);
+
+      // Decrement remainingUnits atomically
+      booking.remainingUnits = Math.max(0, currentRemaining - requestedUnits);
+
+      // Update total calculated quote for the bulk booking
+      const totalClaimedQuotes = booking.assignments.reduce((sum: number, a: any) => sum + (a.totalAmount || 0), 0);
+      booking.totalAmount = totalClaimedQuotes;
+      booking.quotedPrice = totalClaimedQuotes;
+
+      // Update bulk booking status
+      if (booking.remainingUnits === 0) {
+        booking.status = "ACCEPTED"; // Fully claimed by providers
+      } else {
+        booking.status = "PARTIALLY_ACCEPTED"; // Still open for other freelancers
+      }
+
+      await booking.save();
+
+      // Notify Client about the claim
+      const providerName = dbUser?.name || session.user.name || "A service expert";
+      await Notification.create({
+        recipient: booking.client,
+        sender: currentUserId,
+        type: "BOOKING_ACCEPTED",
+        title: "Bulk Units Claimed! 🎉",
+        message: `${providerName} claimed ${requestedUnits} of ${booking.totalUnits} ${booking.unitType || "household"}s with a quote of ₹${assignmentTotal} (₹${unitPrice}/${booking.unitType || "unit"}). ${booking.remainingUnits > 0 ? `${booking.remainingUnits} units still awaiting experts.` : "All units are now claimed!"}`,
+        booking: booking._id,
+      });
+
+      const updated = await Booking.findById(booking._id)
+        .populate("client", "name email phone image")
+        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("gig");
+
+      return NextResponse.json({
+        success: true,
+        message: `Successfully claimed ${requestedUnits} ${booking.unitType || "household"}s! Your quote has been submitted to the customer.`,
+        booking: updated,
+      });
+    }
+
+    // =========================================================================
+    // BULK BOOKING ACTION 2: CONFIRM SPECIFIC ASSIGNMENT (CLIENT SIDE)
+    // =========================================================================
+    if (booking.isBulk && (action === "CONFIRM_ASSIGNMENT" || (targetStatus === "CONFIRMED" && assignmentId))) {
+      if (!isClient) {
+        return NextResponse.json({ error: "Only the customer can confirm quotes for assignments." }, { status: 403 });
+      }
+
+      const targetAssignment = booking.assignments?.find(
+        (a: any) => a._id?.toString() === assignmentId || a._id === assignmentId
+      );
+
+      if (!targetAssignment) {
+        return NextResponse.json({ error: "Assignment not found in this bulk booking." }, { status: 404 });
+      }
+
+      targetAssignment.status = "CONFIRMED";
+      if (paymentMethod === "CASH_AFTER_WORK") {
+        targetAssignment.paymentMethod = "CASH_AFTER_WORK";
+      }
+
+      // If all assignments are confirmed, mark booking CONFIRMED
+      const allConfirmed = booking.assignments?.every((a: any) => a.status === "CONFIRMED" || a.status === "IN_PROGRESS" || a.status === "COMPLETED");
+      if (allConfirmed && booking.remainingUnits === 0) {
+        booking.status = "CONFIRMED";
+      }
+
+      await booking.save();
+
+      // Notify the assigned provider
+      const clientName = dbUser?.name || session.user.name || "The customer";
+      await Notification.create({
+        recipient: targetAssignment.provider,
+        sender: sessionUserId,
+        type: "BOOKING_ACCEPTED",
+        title: "Quote Confirmed! 🎉",
+        message: `${clientName} confirmed your quote of ₹${targetAssignment.totalAmount} for ${targetAssignment.unitsClaimed} ${booking.unitType || "household"}s (${targetAssignment.paymentMethod === "CASH_AFTER_WORK" ? "Cash Payment After Work" : "Online Payment"}).`,
+        booking: booking._id,
+      });
+
+      const updated = await Booking.findById(booking._id)
+        .populate("client", "name email phone image")
+        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("gig");
+
+      return NextResponse.json({
+        success: true,
+        message: `Quote for ${targetAssignment.unitsClaimed} units confirmed successfully!`,
+        booking: updated,
+      });
+    }
+
+    // =========================================================================
+    // BULK BOOKING ACTION 2B: DECLINE SPECIFIC ASSIGNMENT (CLIENT SIDE)
+    // =========================================================================
+    if (booking.isBulk && (action === "DECLINE_ASSIGNMENT" || (targetStatus === "REJECTED" && assignmentId))) {
+      if (!isClient) {
+        return NextResponse.json({ error: "Only the customer can decline quotes for assignments." }, { status: 403 });
+      }
+
+      if (!booking.assignments || booking.assignments.length === 0) {
+        return NextResponse.json({ error: "No assignments found in this bulk booking." }, { status: 404 });
+      }
+
+      const assignmentIndex = booking.assignments.findIndex(
+        (a: any) => a._id?.toString() === assignmentId || a._id === assignmentId
+      );
+
+      if (assignmentIndex === -1 || assignmentIndex === undefined) {
+        return NextResponse.json({ error: "Assignment not found in this bulk booking." }, { status: 404 });
+      }
+
+      const targetAssignment = booking.assignments[assignmentIndex];
+      const releasedUnits = targetAssignment.unitsClaimed || 0;
+      const declinedProvider = targetAssignment.provider;
+
+      // Remove assignment and release units back
+      booking.assignments.splice(assignmentIndex, 1);
+      const currentRem = booking.remainingUnits ?? booking.totalUnits ?? 0;
+      booking.remainingUnits = Math.min(booking.totalUnits || 0, currentRem + releasedUnits);
+
+      // Recalculate total amount
+      const totalClaimedQuotes = (booking.assignments || []).reduce((sum: number, a: any) => sum + (a.totalAmount || 0), 0);
+      booking.totalAmount = totalClaimedQuotes;
+      booking.quotedPrice = totalClaimedQuotes;
+
+      // Update status
+      if ((booking.assignments || []).length === 0) {
+        booking.status = "PENDING";
+      } else {
+        booking.status = "PARTIALLY_ACCEPTED";
+      }
+
+      await booking.save();
+
+      // Notify the declined provider
+      const clientName = dbUser?.name || session.user.name || "The customer";
+      if (declinedProvider) {
+        await Notification.create({
+          recipient: declinedProvider,
+          sender: sessionUserId,
+          type: "BOOKING_REJECTED",
+          title: "Quote Declined",
+          message: `${clientName} declined your quote for ${releasedUnits} ${booking.unitType || "household"}s. The units have been returned to the live marketplace for other experts.`,
+          booking: booking._id,
+        });
+      }
+
+      const updated = await Booking.findById(booking._id)
+        .populate("client", "name email phone image")
+        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("gig");
+
+      return NextResponse.json({
+        success: true,
+        message: `Quote declined. ${releasedUnits} units released back to the marketplace.`,
+        booking: updated,
+      });
+    }
+
+    // =========================================================================
+    // BULK BOOKING ACTION 3: UPDATE ASSIGNMENT STATUS (START / COMPLETE)
+    // =========================================================================
+    if (booking.isBulk && assignmentId && (targetStatus === "IN_PROGRESS" || targetStatus === "COMPLETED")) {
+      const targetAssignment = booking.assignments?.find(
+        (a: any) => a._id?.toString() === assignmentId || a._id === assignmentId
+      );
+
+      if (!targetAssignment) {
+        return NextResponse.json({ error: "Assignment not found." }, { status: 404 });
+      }
+
+      const assignedProvId =
+        targetAssignment.provider?._id?.toString() ||
+        targetAssignment.provider?.toString() ||
+        (typeof targetAssignment.provider === "object" ? String(targetAssignment.provider._id || "") : String(targetAssignment.provider || ""));
+
+      const isMatchingProvider =
+        assignedProvId === sessionUserId ||
+        (userMongoId && assignedProvId === userMongoId) ||
+        (session?.user?.id && assignedProvId === session.user.id);
+
+      if (!isMatchingProvider && !isClient) {
+        return NextResponse.json({ error: "Only the assigned provider can update this assignment." }, { status: 403 });
+      }
+
+      if (targetStatus === "IN_PROGRESS") {
+        targetAssignment.status = "IN_PROGRESS";
+        targetAssignment.startedAt = new Date();
+
+        booking.status = "IN_PROGRESS";
+        await booking.save();
+
+        await Notification.create({
+          recipient: booking.client,
+          sender: currentUserId,
+          type: "SERVICE_STARTED",
+          title: "Service Started 🛠️",
+          message: `Provider started work on their ${targetAssignment.unitsClaimed} assigned ${booking.unitType || "household"}s.`,
+          booking: booking._id,
+        });
+      } else if (targetStatus === "COMPLETED") {
+        targetAssignment.status = "COMPLETED";
+        targetAssignment.completedAt = new Date();
+
+        // Check if all assignments are completed
+        const allCompleted = booking.assignments?.every((a: any) => a.status === "COMPLETED");
+        if (allCompleted && booking.remainingUnits === 0) {
+          booking.status = "COMPLETED";
+          booking.completedAt = new Date();
+        }
+
+        await booking.save();
+
+        await Notification.create({
+          recipient: booking.client,
+          sender: currentUserId,
+          type: "SERVICE_COMPLETED",
+          title: "Service Completed! ✅",
+          message: `Provider completed work for ${targetAssignment.unitsClaimed} ${booking.unitType || "household"}s (Amount: ₹${targetAssignment.totalAmount}).`,
+          booking: booking._id,
+        });
+      }
+
+      const updated = await Booking.findById(booking._id)
+        .populate("client", "name email phone image")
+        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("gig");
+
+      return NextResponse.json({
+        success: true,
+        message: `Assignment marked as ${targetStatus.toLowerCase()}`,
+        booking: updated,
+      });
+    }
+
+    // =========================================================================
+    // SINGLE BOOKING / GENERAL TRANSITIONS
+    // =========================================================================
+    const currentStatus = booking.status.toUpperCase();
+    const requestedStatus = (targetStatus || "").toUpperCase();
+
     if (requestedStatus === "CANCELLED") {
-      if (!isClient && !isProvider) {
+      if (!isClient && !isSingleProvider) {
         return NextResponse.json({ error: "Forbidden to cancel this booking" }, { status: 403 });
       }
       if (currentStatus === "COMPLETED" || currentStatus === "REJECTED" || currentStatus === "CANCELLED") {
@@ -114,16 +426,17 @@ export async function PATCH(
       booking.status = "CANCELLED";
       booking.cancelledAt = new Date();
 
-      // Notify recipient
-      const recipientId = isClient ? booking.provider : booking.client;
-      await Notification.create({
-        recipient: recipientId,
-        sender: sessionUserId,
-        type: "BOOKING_CANCELLED",
-        title: "Booking Cancelled",
-        message: `Booking for "${booking.serviceTitle}" was cancelled by the ${isClient ? "customer" : "provider"}.`,
-        booking: booking._id,
-      });
+      const recipientId = isClient ? (booking.provider || booking.assignments?.[0]?.provider) : booking.client;
+      if (recipientId) {
+        await Notification.create({
+          recipient: recipientId,
+          sender: sessionUserId,
+          type: "BOOKING_CANCELLED",
+          title: "Booking Cancelled",
+          message: `Booking for "${booking.serviceTitle}" was cancelled by the ${isClient ? "customer" : "provider"}.`,
+          booking: booking._id,
+        });
+      }
 
     } else if (requestedStatus === "ACCEPTED") {
       if (currentStatus !== "PENDING") {
@@ -140,18 +453,16 @@ export async function PATCH(
         );
       }
 
-      const acceptingUserId = userMongoId || sessionUserId;
       booking.status = "ACCEPTED";
-      booking.provider = acceptingUserId; // Claim booking for accepting freelancer
+      booking.provider = currentUserId;
       booking.totalAmount = finalQuote;
       booking.quotedPrice = finalQuote;
       booking.acceptedAt = new Date();
 
-      // Notify Client with accepting freelancer's name and quote price
       const providerName = dbUser?.name || session.user.name || "A service expert";
       await Notification.create({
         recipient: booking.client,
-        sender: acceptingUserId,
+        sender: currentUserId,
         type: "BOOKING_ACCEPTED",
         title: "Quote Received & Accepted! 🎉",
         message: `Your booking for "${booking.serviceTitle}" was accepted by ${providerName} with a quoted price of ₹${finalQuote}. Please accept or decline the quote.`,
@@ -159,7 +470,7 @@ export async function PATCH(
       });
 
     } else if (requestedStatus === "CONFIRMED") {
-      if (currentStatus !== "ACCEPTED") {
+      if (currentStatus !== "ACCEPTED" && currentStatus !== "PARTIALLY_ACCEPTED") {
         return NextResponse.json(
           { error: "Can only confirm a booking that has been accepted by the freelancer." },
           { status: 400 }
@@ -170,29 +481,29 @@ export async function PATCH(
         booking.paymentMethod = "CASH_AFTER_WORK";
       }
 
-      // Notify Provider
       const clientName = dbUser?.name || session.user.name || "The customer";
-      await Notification.create({
-        recipient: booking.provider,
-        sender: sessionUserId,
-        type: "BOOKING_ACCEPTED",
-        title: "Booking Confirmed! 🎉",
-        message: `${clientName} accepted your quote of ₹${booking.totalAmount} (${booking.paymentMethod === "CASH_AFTER_WORK" ? "Cash After Work" : "Online"}). Booking confirmed!`,
-        booking: booking._id,
-      });
+      if (booking.provider) {
+        await Notification.create({
+          recipient: booking.provider,
+          sender: sessionUserId,
+          type: "BOOKING_ACCEPTED",
+          title: "Booking Confirmed! 🎉",
+          message: `${clientName} accepted your quote of ₹${booking.totalAmount} (${booking.paymentMethod === "CASH_AFTER_WORK" ? "Cash After Work" : "Online"}). Booking confirmed!`,
+          booking: booking._id,
+        });
+      }
 
     } else if (requestedStatus === "REJECTED") {
-      if (!isProvider) {
+      if (!isSingleProvider && !booking.isBulk) {
         return NextResponse.json({ error: "Only the assigned service provider can reject this booking." }, { status: 403 });
       }
-      if (currentStatus !== "PENDING") {
+      if (currentStatus !== "PENDING" && currentStatus !== "PARTIALLY_ACCEPTED") {
         return NextResponse.json({ error: `Cannot reject a booking that is ${currentStatus}` }, { status: 400 });
       }
       booking.status = "REJECTED";
       booking.rejectionReason = rejectionReason || "Provider is unavailable at the requested date/time.";
       booking.rejectedAt = new Date();
 
-      // Notify Client
       await Notification.create({
         recipient: booking.client,
         sender: sessionUserId,
@@ -203,7 +514,7 @@ export async function PATCH(
       });
 
     } else if (requestedStatus === "IN_PROGRESS") {
-      if (!isProvider) {
+      if (!isSingleProvider) {
         return NextResponse.json({ error: "Only the assigned service provider can start this service." }, { status: 403 });
       }
       if (currentStatus !== "ACCEPTED" && currentStatus !== "CONFIRMED") {
@@ -212,7 +523,6 @@ export async function PATCH(
       booking.status = "IN_PROGRESS";
       booking.startedAt = new Date();
 
-      // Notify Client
       await Notification.create({
         recipient: booking.client,
         sender: sessionUserId,
@@ -223,7 +533,7 @@ export async function PATCH(
       });
 
     } else if (requestedStatus === "COMPLETED") {
-      if (!isProvider) {
+      if (!isSingleProvider) {
         return NextResponse.json({ error: "Only the assigned service provider can mark work as completed." }, { status: 403 });
       }
       if (currentStatus !== "IN_PROGRESS" && currentStatus !== "ACCEPTED" && currentStatus !== "CONFIRMED") {
@@ -232,7 +542,6 @@ export async function PATCH(
       booking.status = "COMPLETED";
       booking.completedAt = new Date();
 
-      // Notify Client
       await Notification.create({
         recipient: booking.client,
         sender: sessionUserId,
@@ -251,6 +560,7 @@ export async function PATCH(
     const updatedBooking = await Booking.findById(booking._id)
       .populate("client", "name email phone image")
       .populate("provider", "name email phone image rating skills bio")
+      .populate("assignments.provider", "name email phone image rating skills bio")
       .populate("gig");
 
     return NextResponse.json({
@@ -263,3 +573,4 @@ export async function PATCH(
     return NextResponse.json({ error: error.message || "Failed to update booking status" }, { status: 500 });
   }
 }
+

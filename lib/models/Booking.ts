@@ -12,6 +12,25 @@ export interface IAddress {
   instructions?: string;
 }
 
+export interface IBulkAssignment {
+  _id?: any;
+  provider: any;
+  unitsClaimed: number;
+  quotedPricePerUnit: number;
+  totalAmount: number;
+  status: "PENDING" | "ACCEPTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "IN_PROGRESS" | "COMPLETED";
+  paymentStatus: "PENDING" | "PAID" | "FAILED";
+  paymentMethod: "RAZORPAY" | "CASH_AFTER_WORK";
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  paidAt?: Date;
+  claimedAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+  notes?: string;
+}
+
 export interface IBooking extends Document {
   gig?: any;
   serviceTitle: string;
@@ -19,7 +38,7 @@ export interface IBooking extends Document {
   problemDescription: string;
   client: any;
   provider: any;
-  status: "PENDING" | "ACCEPTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "IN_PROGRESS" | "COMPLETED";
+  status: "PENDING" | "PARTIALLY_ACCEPTED" | "ACCEPTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "IN_PROGRESS" | "COMPLETED";
   totalAmount: number;
   quotedPrice?: number;
   paymentMethod: "RAZORPAY" | "CASH_AFTER_WORK";
@@ -38,6 +57,13 @@ export interface IBooking extends Document {
   completedAt?: Date;
   rejectedAt?: Date;
   cancelledAt?: Date;
+  // Bulk booking fields
+  isBulk?: boolean;
+  totalUnits?: number;
+  remainingUnits?: number;
+  unitType?: string;
+  selectedServices?: string[];
+  assignments?: IBulkAssignment[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -55,6 +81,60 @@ const AddressSchema = new Schema<IAddress>(
     instructions: { type: String, default: "" },
   },
   { _id: false }
+);
+
+const BulkAssignmentSchema = new Schema<IBulkAssignment>(
+  {
+    provider: {
+      type: Schema.Types.Mixed,
+      ref: "User",
+      required: true,
+    },
+    unitsClaimed: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    quotedPricePerUnit: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    totalAmount: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    status: {
+      type: String,
+      enum: ["PENDING", "ACCEPTED", "CONFIRMED", "REJECTED", "CANCELLED", "IN_PROGRESS", "COMPLETED"],
+      default: "ACCEPTED",
+      uppercase: true,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["PENDING", "PAID", "FAILED"],
+      default: "PENDING",
+      uppercase: true,
+    },
+    paymentMethod: {
+      type: String,
+      enum: ["RAZORPAY", "CASH_AFTER_WORK"],
+      default: "CASH_AFTER_WORK",
+    },
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    razorpaySignature: { type: String },
+    paidAt: { type: Date },
+    claimedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    startedAt: { type: Date },
+    completedAt: { type: Date },
+    notes: { type: String, default: "" },
+  },
+  { _id: true, timestamps: true }
 );
 
 const BookingSchema = new Schema<IBooking>(
@@ -91,7 +171,7 @@ const BookingSchema = new Schema<IBooking>(
     },
     status: {
       type: String,
-      enum: ["PENDING", "ACCEPTED", "CONFIRMED", "REJECTED", "CANCELLED", "IN_PROGRESS", "COMPLETED"],
+      enum: ["PENDING", "PARTIALLY_ACCEPTED", "ACCEPTED", "CONFIRMED", "REJECTED", "CANCELLED", "IN_PROGRESS", "COMPLETED"],
       default: "PENDING",
       uppercase: true,
     },
@@ -144,6 +224,32 @@ const BookingSchema = new Schema<IBooking>(
     completedAt: { type: Date },
     rejectedAt: { type: Date },
     cancelledAt: { type: Date },
+    // Bulk Booking Fields
+    isBulk: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    totalUnits: {
+      type: Number,
+      default: 1,
+    },
+    remainingUnits: {
+      type: Number,
+      default: 1,
+    },
+    unitType: {
+      type: String,
+      default: "household",
+    },
+    selectedServices: {
+      type: [String],
+      default: [],
+    },
+    assignments: {
+      type: [BulkAssignmentSchema],
+      default: [],
+    },
   },
   {
     timestamps: true,

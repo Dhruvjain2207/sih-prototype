@@ -25,6 +25,12 @@ import {
   Menu,
   Star,
   Volume2,
+  Building,
+  Layers,
+  Boxes,
+  Users,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './freelancer.css';
@@ -64,9 +70,19 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
 
   // Quoting State
   const [quotePrices, setQuotePrices] = useState<Record<string, string>>({});
+  const [bulkClaimUnits, setBulkClaimUnits] = useState<Record<string, number>>({});
+  const [bulkClaimPricePerUnit, setBulkClaimPricePerUnit] = useState<Record<string, string>>({});
 
   const handleQuoteChange = (bookingId: string, val: string) => {
     setQuotePrices((prev) => ({ ...prev, [bookingId]: val }));
+  };
+
+  const handleBulkUnitsChange = (bookingId: string, val: number) => {
+    setBulkClaimUnits((prev) => ({ ...prev, [bookingId]: val }));
+  };
+
+  const handleBulkPriceChange = (bookingId: string, val: string) => {
+    setBulkClaimPricePerUnit((prev) => ({ ...prev, [bookingId]: val }));
   };
 
   // Chat Window States
@@ -302,6 +318,79 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
     }
   };
 
+  const handleClaimBulkUnits = async (bookingId: string, maxRemaining: number) => {
+    const rawUnits = bulkClaimUnits[bookingId] !== undefined ? bulkClaimUnits[bookingId] : maxRemaining;
+    const units = Math.max(1, Math.min(maxRemaining, rawUnits));
+    const priceStr = bulkClaimPricePerUnit[bookingId];
+    const unitPrice = Number(priceStr);
+
+    if (!units || units <= 0 || units > maxRemaining) {
+      toast.error(`Please select between 1 and ${maxRemaining} units to claim.`);
+      return;
+    }
+
+    if (!unitPrice || unitPrice <= 0) {
+      toast.error('Please enter a valid quoted price per unit (₹).');
+      return;
+    }
+
+    setSubmittingAction(true);
+    const toastId = toast.loading(`Claiming ${units} households at ₹${unitPrice}/unit...`);
+
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CLAIM_BULK_UNITS',
+          unitsClaimed: units,
+          quotedPricePerUnit: unitPrice,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(`Successfully claimed ${units} households (Total: ₹${units * unitPrice})! Quote sent to customer 🎉`, { id: toastId, duration: 5000 });
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to claim bulk units', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error claiming bulk units', { id: toastId });
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleUpdateAssignmentStatus = async (bookingId: string, assignmentId: string, status: string) => {
+    setSubmittingAction(true);
+    const toastId = toast.loading(`Updating your assigned units to ${status}...`);
+
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_ASSIGNMENT_STATUS',
+          assignmentId,
+          status,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(`Units marked as ${status.toLowerCase()}!`, { id: toastId, duration: 4000 });
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to update assignment status', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error updating assignment status', { id: toastId });
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReviewBooking) return;
@@ -357,13 +446,62 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
         .toUpperCase()
     : 'FL';
 
-  // Categorize Real Bookings
-  const pendingRequests = bookings.filter((b) => b.status === 'PENDING');
-  const activeJobs = bookings.filter((b) => b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS');
-  const completedJobs = bookings.filter((b) => b.status === 'COMPLETED');
-  const pastInactives = bookings.filter((b) => b.status === 'REJECTED' || b.status === 'CANCELLED');
+  const currentUserId = session?.user?.id || (session?.user as any)?._id;
 
-  const totalCreditsEarned = completedJobs.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
+  const isMyAssignment = (a: any) => {
+    const provId =
+      a.provider?._id?.toString() ||
+      a.provider?.toString() ||
+      (typeof a.provider === 'object' ? String(a.provider._id || '') : String(a.provider || ''));
+    return (
+      provId === currentUserId ||
+      (session?.user?.id && provId === session.user.id) ||
+      ((session?.user as any)?._id && provId === (session?.user as any)._id)
+    );
+  };
+
+  // Categorize Real Bookings (supporting single + bulk bookings)
+  const pendingRequests = bookings.filter((b) => {
+    if (b.isBulk) {
+      const alreadyAssigned = (b.assignments || []).some(isMyAssignment);
+      return (b.remainingUnits || 0) > 0 && !alreadyAssigned;
+    }
+    return b.status === 'PENDING';
+  });
+
+  const activeJobs = bookings.filter((b) => {
+    if (b.isBulk) {
+      return (b.assignments || []).some(
+        (a: any) =>
+          isMyAssignment(a) &&
+          (a.status === 'ACCEPTED' || a.status === 'CONFIRMED' || a.status === 'IN_PROGRESS')
+      );
+    }
+    return b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS';
+  });
+
+  const completedJobs = bookings.filter((b) => {
+    if (b.isBulk) {
+      return (b.assignments || []).some(
+        (a: any) => isMyAssignment(a) && a.status === 'COMPLETED'
+      );
+    }
+    return b.status === 'COMPLETED';
+  });
+
+  const pastInactives = bookings.filter((b) => {
+    if (b.isBulk) return false;
+    return b.status === 'REJECTED' || b.status === 'CANCELLED';
+  });
+
+  const totalCreditsEarned = completedJobs.reduce((acc, b) => {
+    if (b.isBulk) {
+      const myA = (b.assignments || []).find(isMyAssignment);
+      return acc + (myA?.totalAmount || 0);
+    }
+    return acc + (b.totalAmount || 0);
+  }, 0);
+
   const totalHoursHelped = completedJobs.length * 2;
 
   return (
@@ -739,115 +877,302 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
             </div>
           ) : (
             <div className="freelancer-cards-grid">
-              {pendingRequests.map((req) => (
-                <div key={req._id} className="freelancer-card">
-                  <div>
-                    <div className="freelancer-card-top">
-                      <div className="freelancer-card-icon">
-                        <Wrench size={22} />
+              {pendingRequests.map((req) => {
+                // ==========================================
+                // BULK REQUEST CARD (MULTI-UNIT / MULTI-SERVICE)
+                // ==========================================
+                if (req.isBulk) {
+                  const remaining = req.remainingUnits || 1;
+                  const rawUnits = bulkClaimUnits[req._id] !== undefined ? bulkClaimUnits[req._id] : remaining;
+                  const selectedUnits = Math.max(1, Math.min(remaining, rawUnits));
+                  const pricePerUnit = Number(bulkClaimPricePerUnit[req._id]) || 0;
+                  const totalQuotedAmount = selectedUnits * pricePerUnit;
+
+                  return (
+                    <div
+                      key={req._id}
+                      className="freelancer-card"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(13, 22, 44, 0.95), rgba(30, 41, 59, 0.9))',
+                        border: '1px solid rgba(99, 102, 241, 0.45)',
+                        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
+                      }}
+                    >
+                      <div>
+                        {/* Header */}
+                        <div className="freelancer-card-top">
+                          <div className="freelancer-card-icon" style={{ background: 'linear-gradient(135deg, #6366f1, #3b82f6)', color: '#ffffff' }}>
+                            <Building size={22} />
+                          </div>
+                          <div className="freelancer-card-meta">
+                            <div className="freelancer-card-title-row">
+                              <span className="freelancer-card-title" style={{ fontSize: '1.15rem' }}>{req.serviceTitle}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                              <span style={{
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#f59e0b',
+                                border: '1px solid rgba(245, 158, 11, 0.35)',
+                                padding: '0.2rem 0.6rem',
+                                borderRadius: '8px',
+                                fontSize: '0.75rem',
+                                fontWeight: 800,
+                              }}>
+                                ⚡ {remaining} of {req.totalUnits} Units Remaining Open
+                              </span>
+                              <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                                Client: <strong style={{ color: '#ffffff' }}>{req.client?.name || 'Society Organizer'}</strong> ({req.address?.phone || req.client?.phone || 'No phone'})
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Multi-Service Chips */}
+                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', margin: '0.75rem 0' }}>
+                          {(req.selectedServices || []).map((srv: string) => (
+                            <span key={srv} style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '6px' }}>
+                              ✓ {srv}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Problem & Location Info */}
+                        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', padding: '0.85rem', borderRadius: '10px', fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '1rem' }}>
+                          <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Society / Task Scope:</div>
+                          <div style={{ color: '#ffffff', fontWeight: 600, marginBottom: '0.4rem' }}>"{req.problemDescription || req.notes || 'Bulk work for units'}"</div>
+                          <div>📅 Date: {new Date(req.scheduledDate).toLocaleDateString()} ({req.timeSlot})</div>
+                          <div>📍 Address: {req.address?.houseFlat}, {req.address?.streetArea}, {req.address?.city}</div>
+                        </div>
                       </div>
-                      <div className="freelancer-card-meta">
-                        <div className="freelancer-card-title-row">
-                          <span className="freelancer-card-title">{req.serviceTitle}</span>
-                          <span className="freelancer-tag-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>⚡ Quote Pending</span>
+
+                      {/* Bulk Claim Form */}
+                      <div style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: '12px', padding: '1rem', marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {/* 1. Unit Selector */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#ffffff', fontWeight: 800 }}>
+                              How many households will you claim?
+                            </label>
+                            <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 700 }}>
+                              Max: {remaining} {req.unitType || 'households'}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#030712', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '8px', padding: '0.2rem 0.5rem' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleBulkUnitsChange(req._id, Math.max(1, selectedUnits - 1))}
+                                style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '0.25rem 0.4rem' }}
+                              >
+                                <Minus size={15} />
+                              </button>
+                              <span style={{ color: '#ffffff', fontWeight: 900, fontSize: '0.95rem', minWidth: '40px', textAlign: 'center' }}>
+                                {selectedUnits}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleBulkUnitsChange(req._id, Math.min(remaining, selectedUnits + 1))}
+                                style={{ background: 'transparent', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: '0.25rem 0.4rem' }}
+                              >
+                                <Plus size={15} />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleBulkUnitsChange(req._id, remaining)}
+                              style={{
+                                background: selectedUnits === remaining ? '#6366f1' : 'rgba(255,255,255,0.05)',
+                                border: `1px solid ${selectedUnits === remaining ? '#6366f1' : 'rgba(255,255,255,0.1)'}`,
+                                color: selectedUnits === remaining ? '#ffffff' : '#cbd5e1',
+                                padding: '0.35rem 0.75rem',
+                                borderRadius: '8px',
+                                fontSize: '0.75rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Accept All ({remaining} units)
+                            </button>
+                          </div>
                         </div>
-                        <div className="freelancer-card-subtext">
-                          Customer: <strong>{req.client?.name || 'Customer'}</strong> ({req.address?.phone || req.client?.phone || 'No phone'})
+
+                        {/* 2. Rate per unit input */}
+                        <div>
+                          <label style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>
+                            Quoted Rate Per Household/Unit (₹):
+                          </label>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(56,189,248,0.2)', padding: '0.55rem 0.85rem', borderRadius: '8px', color: '#38bdf8', fontWeight: 800 }}>₹</span>
+                            <input
+                              type="number"
+                              placeholder="e.g. 350"
+                              value={bulkClaimPricePerUnit[req._id] || ''}
+                              onChange={(e) => handleBulkPriceChange(req._id, e.target.value)}
+                              style={{
+                                flex: 1,
+                                background: '#030712',
+                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                borderRadius: '8px',
+                                padding: '0.55rem 0.85rem',
+                                color: '#ffffff',
+                                fontWeight: 700,
+                                fontSize: '0.9rem',
+                                outline: 'none',
+                              }}
+                            />
+                          </div>
                         </div>
+
+                        {/* 3. Live Total calculation badge */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.85rem', borderRadius: '8px', fontSize: '0.82rem' }}>
+                          <span style={{ color: '#94a3b8' }}>Total Quoted for {selectedUnits} Units:</span>
+                          <span style={{ color: '#4ade80', fontWeight: 900, fontSize: '1.05rem' }}>
+                            ₹{totalQuotedAmount}
+                          </span>
+                        </div>
+
+                        {/* 4. Action button */}
+                        <button
+                          onClick={() => handleClaimBulkUnits(req._id, remaining)}
+                          disabled={submittingAction}
+                          style={{
+                            background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+                            border: 'none',
+                            color: '#ffffff',
+                            padding: '0.85rem',
+                            borderRadius: '12px',
+                            fontWeight: 900,
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.45rem',
+                            boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)',
+                          }}
+                        >
+                          <Check size={18} /> Claim {selectedUnits} Units & Send Quote (₹{totalQuotedAmount}) ↗
+                        </button>
                       </div>
                     </div>
+                  );
+                }
 
-                    <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '1rem' }}>
-                      <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem / Task Description:</div>
-                      <div style={{ color: '#ffffff', fontWeight: 600, marginBottom: '0.4rem' }}>"{req.problemDescription || req.notes || 'No description'}"</div>
-                      <div>📅 Date: {new Date(req.scheduledDate).toLocaleDateString()} ({req.timeSlot})</div>
-                      <div>📍 Address: {req.address?.houseFlat}, {req.address?.streetArea}, {req.address?.city}</div>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                // ==========================================
+                // SINGLE SERVICE REQUEST CARD
+                // ==========================================
+                return (
+                  <div key={req._id} className="freelancer-card">
                     <div>
-                      <label style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>
-                        Enter Your Quoted Price (₹) for this job:
-                      </label>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(56,189,248,0.2)', padding: '0.55rem 0.85rem', borderRadius: '8px', color: '#38bdf8', fontWeight: 800 }}>₹</span>
-                        <input
-                          type="number"
-                          placeholder="e.g. 250"
-                          value={quotePrices[req._id] || ''}
-                          onChange={(e) => handleQuoteChange(req._id, e.target.value)}
+                      <div className="freelancer-card-top">
+                        <div className="freelancer-card-icon">
+                          <Wrench size={22} />
+                        </div>
+                        <div className="freelancer-card-meta">
+                          <div className="freelancer-card-title-row">
+                            <span className="freelancer-card-title">{req.serviceTitle}</span>
+                            <span className="freelancer-tag-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' }}>⚡ Quote Pending</span>
+                          </div>
+                          <div className="freelancer-card-subtext">
+                            Customer: <strong>{req.client?.name || 'Customer'}</strong> ({req.address?.phone || req.client?.phone || 'No phone'})
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(56, 189, 248, 0.15)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.82rem', color: '#cbd5e1', marginBottom: '1rem' }}>
+                        <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem / Task Description:</div>
+                        <div style={{ color: '#ffffff', fontWeight: 600, marginBottom: '0.4rem' }}>"{req.problemDescription || req.notes || 'No description'}"</div>
+                        <div>📅 Date: {new Date(req.scheduledDate).toLocaleDateString()} ({req.timeSlot})</div>
+                        <div>📍 Address: {req.address?.houseFlat}, {req.address?.streetArea}, {req.address?.city}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '0.3rem' }}>
+                          Enter Your Quoted Price (₹) for this job:
+                        </label>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <span style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(56,189,248,0.2)', padding: '0.55rem 0.85rem', borderRadius: '8px', color: '#38bdf8', fontWeight: 800 }}>₹</span>
+                          <input
+                            type="number"
+                            placeholder="e.g. 250"
+                            value={quotePrices[req._id] || ''}
+                            onChange={(e) => handleQuoteChange(req._id, e.target.value)}
+                            style={{
+                              flex: 1,
+                              background: '#030712',
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
+                              borderRadius: '8px',
+                              padding: '0.55rem 0.85rem',
+                              color: '#ffffff',
+                              fontWeight: 700,
+                              fontSize: '0.9rem',
+                              outline: 'none',
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => setSelectedRejectBooking(req)}
+                          disabled={submittingAction}
                           style={{
                             flex: 1,
-                            background: '#030712',
-                            border: '1px solid rgba(56, 189, 248, 0.3)',
-                            borderRadius: '8px',
-                            padding: '0.55rem 0.85rem',
-                            color: '#ffffff',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            color: '#ef4444',
+                            padding: '0.75rem',
+                            borderRadius: '12px',
                             fontWeight: 700,
-                            fontSize: '0.9rem',
-                            outline: 'none',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.35rem',
                           }}
-                        />
+                        >
+                          <Ban size={16} /> Decline Request
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const price = Number(quotePrices[req._id]);
+                            if (!price || price <= 0) {
+                              toast.error('Please enter a valid price quote (₹) before accepting!');
+                              return;
+                            }
+                            handleUpdateStatus(req._id, 'ACCEPTED', undefined, price);
+                          }}
+                          disabled={submittingAction}
+                          style={{
+                            flex: 2,
+                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(16, 185, 129, 0.35))',
+                            border: '1px solid rgba(34, 197, 94, 0.5)',
+                            color: '#4ade80',
+                            padding: '0.75rem',
+                            borderRadius: '12px',
+                            fontWeight: 800,
+                            fontSize: '0.88rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.4rem',
+                            boxShadow: '0 4px 15px rgba(34, 197, 94, 0.15)',
+                          }}
+                        >
+                          <Check size={18} /> Send Quote & Accept ↗
+                        </button>
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-                      <button
-                        onClick={() => setSelectedRejectBooking(req)}
-                        disabled={submittingAction}
-                        style={{
-                          flex: 1,
-                          background: 'rgba(239, 68, 68, 0.12)',
-                          border: '1px solid rgba(239, 68, 68, 0.35)',
-                          color: '#ef4444',
-                          padding: '0.75rem',
-                          borderRadius: '12px',
-                          fontWeight: 700,
-                          fontSize: '0.85rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.35rem',
-                        }}
-                      >
-                        <Ban size={16} /> Decline Request
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          const price = Number(quotePrices[req._id]);
-                          if (!price || price <= 0) {
-                            toast.error('Please enter a valid price quote (₹) before accepting!');
-                            return;
-                          }
-                          handleUpdateStatus(req._id, 'ACCEPTED', undefined, price);
-                        }}
-                        disabled={submittingAction}
-                        style={{
-                          flex: 2,
-                          background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(16, 185, 129, 0.35))',
-                          border: '1px solid rgba(34, 197, 94, 0.5)',
-                          color: '#4ade80',
-                          padding: '0.75rem',
-                          borderRadius: '12px',
-                          fontWeight: 800,
-                          fontSize: '0.88rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '0.4rem',
-                          boxShadow: '0 4px 15px rgba(34, 197, 94, 0.15)',
-                        }}
-                      >
-                        <Check size={18} /> Send Quote & Accept ↗
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -863,71 +1188,180 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
             </div>
           ) : (
             <div className="freelancer-cards-grid" style={{ marginTop: '1.25rem' }}>
-              {activeJobs.map((job) => (
-                <div key={job._id} className="freelancer-person-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div>
-                      <h3 style={{ color: '#ffffff', fontWeight: 700, margin: 0, fontSize: '1.1rem' }}>{job.serviceTitle}</h3>
-                      <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Client: {job.client?.name} ({job.address?.phone || 'No phone'})</span>
+              {activeJobs.map((job) => {
+                // ==========================================
+                // BULK ACTIVE JOB CARD
+                // ==========================================
+                if (job.isBulk) {
+                  const myAssignment = (job.assignments || []).find(isMyAssignment);
+                  const isPaid = myAssignment?.paymentStatus === 'PAID';
+                  const isCashConfirmed = myAssignment?.status === 'CONFIRMED' && myAssignment?.paymentMethod === 'CASH_AFTER_WORK';
+                  const isInProgress = myAssignment?.status === 'IN_PROGRESS';
+                  const isCompleted = myAssignment?.status === 'COMPLETED';
+
+                  return (
+                    <div
+                      key={job._id}
+                      className="freelancer-person-card"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(13, 22, 44, 0.9), rgba(30, 41, 59, 0.85))',
+                        border: '1px solid rgba(99, 102, 241, 0.4)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ background: 'linear-gradient(135deg, #6366f1, #3b82f6)', color: '#ffffff', fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                              🏢 BULK ORDER
+                            </span>
+                            <h3 style={{ color: '#ffffff', fontWeight: 800, margin: 0, fontSize: '1.1rem' }}>
+                              {job.serviceTitle}
+                            </h3>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.3rem' }}>
+                            Client: <strong>{job.client?.name}</strong> ({job.address?.phone || 'No phone'})
+                          </div>
+                        </div>
+
+                        <span style={{
+                          background: isCompleted ? 'rgba(34, 197, 94, 0.2)' : isPaid ? 'rgba(34, 197, 94, 0.15)' : isCashConfirmed ? 'rgba(34, 197, 94, 0.15)' : isInProgress ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                          color: isCompleted ? '#4ade80' : isPaid ? '#22c55e' : isCashConfirmed ? '#22c55e' : isInProgress ? '#38bdf8' : '#f59e0b',
+                          border: `1px solid ${isCompleted || isPaid || isCashConfirmed ? 'rgba(34, 197, 94, 0.3)' : isInProgress ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '10px',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                        }}>
+                          {isCompleted
+                            ? '✅ UNITS COMPLETED'
+                            : isPaid
+                            ? '✅ CONFIRMED (PAID ONLINE)'
+                            : isCashConfirmed
+                            ? '💵 CONFIRMED (CASH AFTER WORK)'
+                            : isInProgress
+                            ? '🛠️ IN PROGRESS'
+                            : '⏳ QUOTE SENT (AWAITING CLIENT)'}
+                        </span>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '1rem' }}>
+                        <div style={{ color: '#38bdf8', fontWeight: 800, marginBottom: '0.3rem' }}>
+                          Your Assigned Portion: {myAssignment?.unitsClaimed || 0} {job.unitType || 'Households'} @ ₹{myAssignment?.quotedPricePerUnit}/unit
+                        </div>
+                        <div>📅 Scheduled: {new Date(job.scheduledDate).toLocaleDateString()} ({job.timeSlot})</div>
+                        <div>📍 Address: {job.address?.houseFlat}, {job.address?.streetArea}, {job.address?.city}</div>
+                        <div style={{ color: isPaid ? '#22c55e' : '#f59e0b', fontWeight: 800, marginTop: '0.35rem' }}>
+                          {isPaid
+                            ? `✅ Payment Received: ₹${myAssignment?.totalAmount}`
+                            : isCashConfirmed
+                            ? `💵 Direct Cash Due After Completion: ₹${myAssignment?.totalAmount}`
+                            : `Quoted Amount: ₹${myAssignment?.totalAmount}`}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => setActiveChatBooking(job)}
+                          style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.35)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                        >
+                          <MessageSquare size={15} /> Chat with Customer
+                        </button>
+
+                        {myAssignment && !isCompleted && (
+                          <>
+                            {!isInProgress && (
+                              <button
+                                onClick={() => handleUpdateAssignmentStatus(job._id, myAssignment._id, 'IN_PROGRESS')}
+                                disabled={submittingAction}
+                                style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                              >
+                                <Play size={14} /> Start Service
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleUpdateAssignmentStatus(job._id, myAssignment._id, 'COMPLETED')}
+                              disabled={submittingAction}
+                              style={{ flex: 1, background: 'linear-gradient(135deg, #0284c7, #2563eb)', border: 'none', color: '#ffffff', padding: '0.55rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                            >
+                              <CheckCircle size={14} /> Mark Completed
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <span style={{
-                      background: job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                      color: job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? '#22c55e' : job.status === 'IN_PROGRESS' ? '#38bdf8' : '#f59e0b',
-                      border: `1px solid ${job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.3)' : job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
-                      padding: '0.2rem 0.6rem',
-                      borderRadius: '10px',
-                      fontSize: '0.75rem',
-                      fontWeight: 800,
-                    }}>
-                      {job.status === 'CONFIRMED' || job.paymentStatus === 'PAID'
-                        ? '✅ CONFIRMED & PAID'
-                        : job.status === 'IN_PROGRESS'
-                        ? '🛠️ IN PROGRESS'
-                        : '⏳ ACCEPTED (Awaiting Payment)'}
-                    </span>
-                  </div>
+                  );
+                }
 
-                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '1rem' }}>
-                    <div>📅 {new Date(job.scheduledDate).toLocaleDateString()} ({job.timeSlot})</div>
-                    <div>📍 Address: {job.address?.houseFlat}, {job.address?.streetArea}, {job.address?.city}</div>
-                    {job.paymentStatus === 'PAID' ? (
-                      <div style={{ color: '#22c55e', fontWeight: 700, marginTop: '0.3rem' }}>
-                        ✅ Payment Received via Razorpay: ₹{job.totalAmount} (ID: {job.razorpayPaymentId || 'Paid'})
+                // ==========================================
+                // SINGLE ACTIVE JOB CARD
+                // ==========================================
+                return (
+                  <div key={job._id} className="freelancer-person-card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        <h3 style={{ color: '#ffffff', fontWeight: 700, margin: 0, fontSize: '1.1rem' }}>{job.serviceTitle}</h3>
+                        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Client: {job.client?.name} ({job.address?.phone || 'No phone'})</span>
                       </div>
-                    ) : (
-                      <div style={{ color: '#f59e0b', fontWeight: 700, marginTop: '0.3rem' }}>
-                        ⏳ Customer Payment Pending: ₹{job.totalAmount}
-                      </div>
-                    )}
-                  </div>
+                      <span style={{
+                        background: job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? '#22c55e' : job.status === 'IN_PROGRESS' ? '#38bdf8' : '#f59e0b',
+                        border: `1px solid ${job.status === 'CONFIRMED' || job.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.3)' : job.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '10px',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                      }}>
+                        {job.status === 'CONFIRMED' || job.paymentStatus === 'PAID'
+                          ? '✅ CONFIRMED & PAID'
+                          : job.status === 'IN_PROGRESS'
+                          ? '🛠️ IN PROGRESS'
+                          : '⏳ ACCEPTED (Awaiting Payment)'}
+                      </span>
+                    </div>
 
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => setActiveChatBooking(job)}
-                      style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.35)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
-                    >
-                      <MessageSquare size={15} /> Chat with Customer
-                    </button>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '1rem' }}>
+                      <div>📅 {new Date(job.scheduledDate).toLocaleDateString()} ({job.timeSlot})</div>
+                      <div>📍 Address: {job.address?.houseFlat}, {job.address?.streetArea}, {job.address?.city}</div>
+                      {job.paymentStatus === 'PAID' ? (
+                        <div style={{ color: '#22c55e', fontWeight: 700, marginTop: '0.3rem' }}>
+                          ✅ Payment Received via Razorpay: ₹{job.totalAmount} (ID: {job.razorpayPaymentId || 'Paid'})
+                        </div>
+                      ) : (
+                        <div style={{ color: '#f59e0b', fontWeight: 700, marginTop: '0.3rem' }}>
+                          ⏳ Customer Payment Pending: ₹{job.totalAmount}
+                        </div>
+                      )}
+                    </div>
 
-                    {(job.status === 'ACCEPTED' || job.status === 'CONFIRMED') && (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <button
-                        onClick={() => handleUpdateStatus(job._id, 'IN_PROGRESS')}
-                        disabled={submittingAction}
-                        style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                        onClick={() => setActiveChatBooking(job)}
+                        style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.35)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
                       >
-                        <Play size={14} /> Start Service
+                        <MessageSquare size={15} /> Chat with Customer
                       </button>
-                    )}
-                    <button
-                      onClick={() => handleUpdateStatus(job._id, 'COMPLETED')}
-                      disabled={submittingAction}
-                      style={{ flex: 1, background: 'linear-gradient(135deg, #0284c7, #2563eb)', border: 'none', color: '#ffffff', padding: '0.55rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
-                    >
-                      <CheckCircle size={14} /> Mark Completed
-                    </button>
+
+                      {(job.status === 'ACCEPTED' || job.status === 'CONFIRMED') && (
+                        <button
+                          onClick={() => handleUpdateStatus(job._id, 'IN_PROGRESS')}
+                          disabled={submittingAction}
+                          style={{ flex: 1, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', padding: '0.55rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                        >
+                          <Play size={14} /> Start Service
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleUpdateStatus(job._id, 'COMPLETED')}
+                        disabled={submittingAction}
+                        style={{ flex: 1, background: 'linear-gradient(135deg, #0284c7, #2563eb)', border: 'none', color: '#ffffff', padding: '0.55rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                      >
+                        <CheckCircle size={14} /> Mark Completed
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

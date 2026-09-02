@@ -11,7 +11,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
     }
 
-    const { bookingId } = await req.json();
+    const { bookingId, assignmentId } = await req.json();
     if (!bookingId) {
       return NextResponse.json({ error: "Booking ID is required." }, { status: 400 });
     }
@@ -23,15 +23,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Booking not found." }, { status: 404 });
     }
 
-    if (booking.status !== "ACCEPTED" && booking.status !== "CONFIRMED") {
-      return NextResponse.json(
-        { error: "Payment can only be made after the freelancer accepts the booking." },
-        { status: 400 }
+    let targetAmount = booking.totalAmount;
+    let targetAssignment: any = null;
+
+    if (booking.isBulk && assignmentId) {
+      targetAssignment = booking.assignments?.find(
+        (a: any) => a._id?.toString() === assignmentId || a._id === assignmentId
       );
+
+      if (!targetAssignment) {
+        return NextResponse.json({ error: "Assignment not found in this bulk booking." }, { status: 404 });
+      }
+
+      if (targetAssignment.paymentStatus === "PAID") {
+        return NextResponse.json({ error: "This assignment quote has already been paid for." }, { status: 400 });
+      }
+
+      targetAmount = targetAssignment.totalAmount;
+    } else {
+      if (booking.status !== "ACCEPTED" && booking.status !== "CONFIRMED" && booking.status !== "PARTIALLY_ACCEPTED") {
+        return NextResponse.json(
+          { error: "Payment can only be made after the service expert accepts/quotes the booking." },
+          { status: 400 }
+        );
+      }
+
+      if (booking.paymentStatus === "PAID") {
+        return NextResponse.json({ error: "This booking has already been paid for." }, { status: 400 });
+      }
     }
 
-    if (booking.paymentStatus === "PAID") {
-      return NextResponse.json({ error: "This booking has already been paid for." }, { status: 400 });
+    if (!targetAmount || targetAmount <= 0) {
+      return NextResponse.json({ error: "Invalid payment amount. Quote must be greater than 0." }, { status: 400 });
     }
 
     const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
@@ -50,8 +73,8 @@ export async function POST(req: Request) {
     });
 
     // Create Razorpay Order (amount in paise)
-    const amountInPaise = Math.round(booking.totalAmount * 100);
-    const receipt = `bkg_${booking._id.toString().slice(-10)}_${Date.now().toString().slice(-4)}`;
+    const amountInPaise = Math.round(targetAmount * 100);
+    const receipt = `bkg_${booking._id.toString().slice(-8)}_${assignmentId ? assignmentId.slice(-4) : "full"}_${Date.now().toString().slice(-4)}`;
 
     const order = await razorpay.orders.create({
       amount: amountInPaise,
@@ -59,11 +82,16 @@ export async function POST(req: Request) {
       receipt,
       notes: {
         bookingId: booking._id.toString(),
+        assignmentId: assignmentId || "",
         serviceTitle: booking.serviceTitle,
       },
     });
 
-    booking.razorpayOrderId = order.id;
+    if (targetAssignment) {
+      targetAssignment.razorpayOrderId = order.id;
+    } else {
+      booking.razorpayOrderId = order.id;
+    }
     await booking.save();
 
     return NextResponse.json({
@@ -81,3 +109,4 @@ export async function POST(req: Request) {
     );
   }
 }
+

@@ -27,6 +27,14 @@ import {
   CreditCard,
   MessageSquare,
   Send,
+  Building,
+  Layers,
+  Boxes,
+  Users,
+  CheckSquare,
+  Square,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './client.css';
@@ -191,7 +199,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     }
   };
 
-  // Booking Form State
+  // Single Booking Form State
   const [bookingForm, setBookingForm] = useState({
     problemDescription: '',
     fullName: session?.user?.name || '',
@@ -206,6 +214,100 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     scheduledDate: new Date().toISOString().split('T')[0],
     timeSlot: '09:00 AM - 12:00 PM',
   });
+
+  // Bulk Booking Modal States
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkSelectedServices, setBulkSelectedServices] = useState<string[]>(['Plumbing', 'Electrician']);
+  const [bulkUnits, setBulkUnits] = useState<number>(10);
+  const [bulkUnitType, setBulkUnitType] = useState<string>('household');
+  const [bulkProblemDescription, setBulkProblemDescription] = useState<string>('');
+  const [submittingBulk, setSubmittingBulk] = useState(false);
+  const [bulkAddress, setBulkAddress] = useState({
+    fullName: session?.user?.name || '',
+    phone: '',
+    houseFlat: '',
+    streetArea: '',
+    landmark: '',
+    city: 'Patna',
+    state: 'Bihar',
+    pincode: '800001',
+    instructions: '',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    timeSlot: '09:00 AM - 12:00 PM',
+  });
+
+  const handleToggleBulkService = (serviceName: string) => {
+    setBulkSelectedServices((prev) =>
+      prev.includes(serviceName)
+        ? prev.filter((s) => s !== serviceName)
+        : [...prev, serviceName]
+    );
+  };
+
+  const handleBulkBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (bulkSelectedServices.length === 0) {
+      toast.error('Please select at least one service category for the bulk booking.');
+      return;
+    }
+
+    if (!bulkProblemDescription.trim()) {
+      toast.error('Please describe the required work for the households/units.');
+      return;
+    }
+
+    if (!bulkAddress.fullName || !bulkAddress.phone || !bulkAddress.houseFlat || !bulkAddress.streetArea || !bulkAddress.city || !bulkAddress.pincode) {
+      toast.error('Please complete all required address & society fields.');
+      return;
+    }
+
+    setSubmittingBulk(true);
+    const toastId = toast.loading(`Broadcasting bulk request for ${bulkUnits} ${bulkUnitType}s (${bulkSelectedServices.join(', ')})...`);
+
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isBulk: true,
+          totalUnits: bulkUnits,
+          unitType: bulkUnitType,
+          selectedServices: bulkSelectedServices,
+          serviceTitle: `Bulk Booking: ${bulkUnits} ${bulkUnitType === 'household' ? 'Households' : bulkUnitType} (${bulkSelectedServices.join(', ')})`,
+          problemDescription: bulkProblemDescription.trim(),
+          scheduledDate: bulkAddress.scheduledDate,
+          timeSlot: bulkAddress.timeSlot,
+          address: {
+            fullName: bulkAddress.fullName,
+            phone: bulkAddress.phone,
+            houseFlat: bulkAddress.houseFlat,
+            streetArea: bulkAddress.streetArea,
+            landmark: bulkAddress.landmark,
+            city: bulkAddress.city,
+            state: bulkAddress.state,
+            pincode: bulkAddress.pincode,
+            instructions: bulkAddress.instructions,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || `Bulk booking dispatched to local experts!`, { id: toastId, duration: 5000 });
+        setIsBulkModalOpen(false);
+        setBulkProblemDescription('');
+        fetchData();
+        setActiveTab('bookings');
+      } else {
+        toast.error(data.error || 'Failed to create bulk booking', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error creating bulk booking', { id: toastId });
+    } finally {
+      setSubmittingBulk(false);
+    }
+  };
 
   // Polling for live notifications and booking updates
   useEffect(() => {
@@ -331,13 +433,18 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     }
   };
 
-  const handleAcceptCashPayment = async (bookingId: string) => {
+  const handleAcceptCashPayment = async (bookingId: string, assignmentId?: string) => {
     const toastId = toast.loading('Confirming quote with Cash Payment After Work...');
     try {
       const res = await fetch(`/api/bookings/${bookingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CONFIRMED', paymentMethod: 'CASH_AFTER_WORK' }),
+        body: JSON.stringify({
+          action: assignmentId ? 'CONFIRM_ASSIGNMENT' : undefined,
+          assignmentId,
+          status: 'CONFIRMED',
+          paymentMethod: 'CASH_AFTER_WORK',
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -411,7 +518,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     });
   };
 
-  const handleRazorpayPayment = async (booking: any) => {
+  const handleRazorpayPayment = async (booking: any, assignmentId?: string) => {
     const isLoaded = await loadRazorpayScript();
     if (!isLoaded) {
       toast.error('Razorpay SDK failed to load. Please check your network connection.');
@@ -424,7 +531,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
       const orderRes = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: booking._id }),
+        body: JSON.stringify({ bookingId: booking._id, assignmentId }),
       });
 
       const orderData = await orderRes.json();
@@ -451,6 +558,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 bookingId: booking._id,
+                assignmentId,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_signature: response.razorpay_signature,
@@ -488,6 +596,29 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
     }
   };
 
+  const handleDeclineAssignment = async (bookingId: string, assignmentId: string) => {
+    const toastId = toast.loading('Declining quote and returning units to marketplace...');
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'DECLINE_ASSIGNMENT',
+          assignmentId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Quote declined. The units have been returned to the marketplace for other experts.', { id: toastId, duration: 4500 });
+        fetchData();
+      } else {
+        toast.error(data.error || 'Failed to decline quote', { id: toastId });
+      }
+    } catch {
+      toast.error('Network error declining quote', { id: toastId });
+    }
+  };
+
   const userInitials = session?.user?.name
     ? session.user.name
         .split(' ')
@@ -497,7 +628,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         .toUpperCase()
     : 'US';
 
-  const activeBookings = bookings.filter((b) => b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS');
+  const activeBookings = bookings.filter((b) => b.status === 'PENDING' || b.status === 'PARTIALLY_ACCEPTED' || b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS');
   const pastBookings = bookings.filter((b) => b.status === 'COMPLETED' || b.status === 'REJECTED' || b.status === 'CANCELLED');
 
   const filteredCategories = SERVICE_CATEGORIES.filter((c) =>
@@ -812,10 +943,65 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         {/* TAB 1: SERVICE CATEGORIES SELECTION */}
         {activeTab === 'services' && (
           <section className="client-services-section">
+            {/* BULK / SOCIETY BOOKING HERO BANNER */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(56, 189, 248, 0.15))',
+                border: '1px solid rgba(99, 102, 241, 0.4)',
+                borderRadius: '18px',
+                padding: '1.5rem 1.75rem',
+                marginBottom: '2rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '1.25rem',
+                boxShadow: '0 8px 30px rgba(99, 102, 241, 0.15)',
+              }}
+            >
+              <div style={{ maxWidth: '650px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <span style={{ background: '#6366f1', color: '#ffffff', fontSize: '0.72rem', fontWeight: 900, padding: '0.2rem 0.55rem', borderRadius: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    🏢 FEATURED
+                  </span>
+                  <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '0.85rem' }}>Society & Multi-Household Booking</span>
+                </div>
+                <h3 style={{ color: '#ffffff', fontSize: '1.35rem', fontWeight: 900, margin: '0 0 0.35rem' }}>
+                  Bulk Booking for 5 to 50+ Households
+                </h3>
+                <p style={{ color: '#cbd5e1', fontSize: '0.88rem', lineHeight: 1.5, margin: 0 }}>
+                  Need multiple services like <strong>Plumbing + Electrical</strong> for 10 households? Create one bulk request. Verified local freelancers can accept the entire job or claim partial units (e.g. 7 units), with remaining units dynamically updating in real-time!
+                </p>
+              </div>
+
+              <div>
+                <button
+                  onClick={() => setIsBulkModalOpen(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '0.85rem 1.75rem',
+                    borderRadius: '12px',
+                    fontWeight: 900,
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 6px 20px rgba(99, 102, 241, 0.4)',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <Boxes size={18} /> Book for Society / Bulk ↗
+                </button>
+              </div>
+            </div>
+
             <div className="client-section-title-row">
               <div>
-                <h2 className="client-section-h2">Available Service Categories</h2>
-                <p className="client-section-sub">Choose a category to describe your problem and request an expert.</p>
+                <h2 className="client-section-h2">Available Service Categories (Single Booking)</h2>
+                <p className="client-section-sub">Choose a single service category to describe your problem and request an expert.</p>
               </div>
             </div>
 
@@ -863,173 +1049,451 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         {/* TAB 2: ACTIVE & UPCOMING BOOKINGS */}
         {activeTab === 'bookings' && (
           <section className="client-services-section">
-            <h2 className="client-section-h2" style={{ marginBottom: '1.25rem' }}>Active & Upcoming Requests</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <h2 className="client-section-h2" style={{ margin: 0 }}>Active & Upcoming Requests</h2>
+              <button
+                onClick={() => setIsBulkModalOpen(true)}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(56, 189, 248, 0.2))',
+                  border: '1px solid rgba(99, 102, 241, 0.5)',
+                  color: '#a5b4fc',
+                  padding: '0.45rem 1rem',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                }}
+              >
+                <Boxes size={15} /> + New Bulk / Society Request
+              </button>
+            </div>
 
             {activeBookings.length === 0 ? (
               <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '3rem', textAlign: 'center' }}>
                 <Calendar size={48} style={{ color: '#64748b', margin: '0 auto 1rem' }} />
                 <h3 style={{ color: '#ffffff', fontWeight: 700, marginBottom: '0.5rem' }}>No Active Requests</h3>
-                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>You don't have any pending or accepted bookings.</p>
-                <button onClick={() => setActiveTab('services')} className="btn-gradient-full" style={{ width: 'auto', padding: '0.75rem 2rem' }}>
-                  Select & Book a Service ↗
-                </button>
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem' }}>You don't have any pending or active bookings right now.</p>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button onClick={() => setActiveTab('services')} className="btn-gradient-full" style={{ width: 'auto', padding: '0.75rem 1.75rem' }}>
+                    Single Service ↗
+                  </button>
+                  <button onClick={() => setIsBulkModalOpen(true)} style={{ background: 'rgba(99, 102, 241, 0.2)', border: '1px solid #6366f1', color: '#ffffff', padding: '0.75rem 1.75rem', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    🏢 Bulk Booking (10+ Units) ↗
+                  </button>
+                </div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: '1.25rem' }}>
-                {activeBookings.map((b) => (
-                  <div key={b._id} style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                          <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>{b.serviceTitle}</h3>
-                          <span style={{
-                            background: b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : b.status === 'ACCEPTED' ? 'rgba(245, 158, 11, 0.15)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-                            color: b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? '#22c55e' : b.status === 'ACCEPTED' ? '#f59e0b' : b.status === 'IN_PROGRESS' ? '#38bdf8' : '#94a3b8',
-                            border: `1px solid ${b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.3)' : b.status === 'ACCEPTED' ? 'rgba(245, 158, 11, 0.3)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(148, 163, 184, 0.3)'}`,
-                            padding: '0.2rem 0.6rem',
-                            borderRadius: '12px',
-                            fontSize: '0.75rem',
-                            fontWeight: 800,
-                          }}>
-                            {b.status === 'PENDING'
-                              ? '⏳ PENDING (Awaiting Freelancer Quote)'
-                              : b.status === 'ACCEPTED'
-                              ? `⚡ QUOTE RECEIVED: ₹${b.totalAmount} (Awaiting Your Choice)`
-                              : b.status === 'CONFIRMED' || b.paymentStatus === 'PAID'
-                              ? `🎉 BOOKING CONFIRMED (${b.paymentStatus === 'PAID' ? 'PAID ONLINE' : 'CASH AFTER WORK'})`
-                              : '🛠️ IN PROGRESS'}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
-                          Assigned Freelancer: <strong style={{ color: '#ffffff' }}>{b.provider?.name || 'Assigned Expert'}</strong> ({b.provider?.phone || 'Contact via message'})
-                        </div>
-                      </div>
+              <div style={{ display: 'grid', gap: '1.5rem' }}>
+                {activeBookings.map((b) => {
+                  if (b.isBulk) {
+                    // ==========================================
+                    // BULK BOOKING CARD RENDERING
+                    // ==========================================
+                    const claimedUnits = (b.assignments || []).reduce((sum: number, a: any) => sum + (a.unitsClaimed || 0), 0);
+                    const totalUnits = b.totalUnits || 1;
+                    const percentClaimed = Math.min(100, Math.round((claimedUnits / totalUnits) * 100));
 
-                      <div style={{ textAlign: 'right' }}>
-                        {b.status === 'PENDING' ? (
-                          <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 600 }}>Custom Quote Pending</div>
-                        ) : (
-                          <>
-                            <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#38bdf8' }}>₹{b.totalAmount}</div>
-                            <div style={{ fontSize: '0.75rem', color: b.paymentStatus === 'PAID' ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
-                              {b.paymentStatus === 'PAID' ? '✅ Paid via Razorpay' : b.status === 'CONFIRMED' ? '💵 Cash After Work' : 'Quoted Price by Expert'}
+                    return (
+                      <div
+                        key={b._id}
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.8))',
+                          border: '1px solid rgba(99, 102, 241, 0.35)',
+                          borderRadius: '18px',
+                          padding: '1.5rem',
+                          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.25)',
+                        }}
+                      >
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                              <span style={{ background: 'linear-gradient(135deg, #6366f1, #3b82f6)', color: '#ffffff', fontSize: '0.75rem', fontWeight: 900, padding: '0.25rem 0.65rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                <Building size={14} /> BULK ORDER ({totalUnits} {b.unitType === 'household' ? 'Households' : b.unitType})
+                              </span>
+                              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>{b.serviceTitle}</h3>
                             </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                              {(b.selectedServices || []).map((srv: string) => (
+                                <span key={srv} style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                                  ✓ {srv}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
 
-                    {/* Problem Description Box */}
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', margin: '0.85rem 0', fontSize: '0.85rem' }}>
-                      <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem Description:</div>
-                      <div style={{ color: '#cbd5e1' }}>"{b.problemDescription || b.notes || 'No description provided'}"</div>
-                      {b.razorpayPaymentId && (
-                        <div style={{ color: '#22c55e', fontSize: '0.75rem', marginTop: '0.35rem', fontWeight: 600 }}>
-                          Payment ID: {b.razorpayPaymentId}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.5rem' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                        📅 Date: {new Date(b.scheduledDate).toLocaleDateString()} ({b.timeSlot}) · 📍 {b.address?.houseFlat}, {b.address?.streetArea}, {b.address?.city}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {/* CUSTOMER DECISION BUTTONS FOR QUOTED JOB */}
-                        {b.status === 'ACCEPTED' && (
-                          <>
-                            <button
-                              onClick={() => handleRazorpayPayment(b)}
-                              style={{
-                                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                                border: 'none',
-                                color: '#ffffff',
-                                padding: '0.55rem 0.95rem',
-                                borderRadius: '10px',
-                                fontSize: '0.82rem',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.4rem',
-                                boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
-                              }}
-                            >
-                              <CreditCard size={15} /> Accept & Pay ₹{b.totalAmount} (Online)
-                            </button>
-
-                            <button
-                              onClick={() => handleAcceptCashPayment(b._id)}
-                              style={{
-                                background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.3))',
-                                border: '1px solid rgba(34, 197, 94, 0.5)',
-                                color: '#4ade80',
-                                padding: '0.55rem 0.95rem',
-                                borderRadius: '10px',
-                                fontSize: '0.82rem',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.4rem',
-                              }}
-                            >
-                              💵 Accept & Pay Cash
-                            </button>
-
-                            <button
-                              onClick={() => handleCancelBooking(b._id)}
-                              style={{
-                                background: 'rgba(239, 68, 68, 0.12)',
-                                border: '1px solid rgba(239, 68, 68, 0.3)',
-                                color: '#ef4444',
-                                padding: '0.55rem 0.85rem',
-                                borderRadius: '10px',
-                                fontSize: '0.82rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              ❌ Decline Quote
-                            </button>
-                          </>
-                        )}
-
-                        {(b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS') && (
-                          <button
-                            onClick={() => setActiveChatBooking(b)}
-                            style={{
-                              background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
-                              border: '1px solid rgba(56, 189, 248, 0.5)',
-                              color: '#38bdf8',
-                              padding: '0.45rem 0.85rem',
-                              borderRadius: '8px',
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{
+                              background: b.remainingUnits === 0 ? 'rgba(34, 197, 94, 0.15)' : b.status === 'PARTIALLY_ACCEPTED' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                              color: b.remainingUnits === 0 ? '#22c55e' : b.status === 'PARTIALLY_ACCEPTED' ? '#f59e0b' : '#a5b4fc',
+                              border: `1px solid ${b.remainingUnits === 0 ? 'rgba(34, 197, 94, 0.3)' : b.status === 'PARTIALLY_ACCEPTED' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                              padding: '0.3rem 0.75rem',
+                              borderRadius: '12px',
                               fontSize: '0.8rem',
                               fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.35rem',
-                            }}
-                          >
-                            <MessageSquare size={14} /> Chat with Expert
-                          </button>
-                        )}
+                              display: 'inline-block',
+                            }}>
+                              {b.remainingUnits === 0
+                                ? '🎉 FULLY CLAIMED BY EXPERTS'
+                                : b.status === 'PARTIALLY_ACCEPTED'
+                                ? `⚡ PARTIALLY CLAIMED (${claimedUnits}/${totalUnits})`
+                                : '⏳ AWAITING EXPERTS'}
+                            </span>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#38bdf8', marginTop: '0.3rem' }}>
+                              ₹{b.totalAmount} <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>(Total Quoted)</span>
+                            </div>
+                          </div>
+                        </div>
 
-                        <button onClick={() => setSelectedBookingDetail(b)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
-                          View Details
-                        </button>
+                        {/* Progress Meter Bar */}
+                        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '1rem', marginBottom: '1.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.4rem' }}>
+                            <span style={{ color: '#ffffff' }}>
+                              Fulfillment Progress: <strong style={{ color: '#38bdf8' }}>{claimedUnits} of {totalUnits} {b.unitType || 'households'} claimed</strong>
+                            </span>
+                            <span style={{ color: b.remainingUnits === 0 ? '#4ade80' : '#fbbf24' }}>
+                              {b.remainingUnits === 0 ? '100% Filled' : `${b.remainingUnits} units remaining open`}
+                            </span>
+                          </div>
+                          <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '6px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${percentClaimed}%`, background: 'linear-gradient(90deg, #38bdf8, #6366f1)', borderRadius: '6px', transition: 'width 0.3s ease' }}></div>
+                          </div>
+                        </div>
 
-                        {b.status === 'PENDING' && (
-                          <button onClick={() => handleCancelBooking(b._id)} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
-                            Cancel Request
-                          </button>
+                        {/* Problem Details */}
+                        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                          <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Society / Task Description:</div>
+                          <div style={{ color: '#cbd5e1' }}>"{b.problemDescription || b.notes || 'No description'}"</div>
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.4rem' }}>
+                            📅 Scheduled: {new Date(b.scheduledDate).toLocaleDateString()} ({b.timeSlot}) · 📍 {b.address?.houseFlat}, {b.address?.streetArea}, {b.address?.city}
+                          </div>
+                        </div>
+
+                        {/* CLAIMS & ASSIGNED FREELANCERS LIST */}
+                        <div>
+                          <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <Users size={16} className="text-sky-400" />
+                            <span>Assigned Experts & Quotes ({b.assignments?.length || 0})</span>
+                          </div>
+
+                          {!b.assignments || b.assignments.length === 0 ? (
+                            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '12px', padding: '1.25rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                              ⏳ No freelancers have claimed units yet. Your request is live in the freelancer marketplace!
+                            </div>
+                          ) : (
+                            <div style={{ display: 'grid', gap: '0.85rem' }}>
+                              {b.assignments.map((assignment: any, aIdx: number) => {
+                                const prov = assignment.provider || {};
+                                return (
+                                  <div
+                                    key={assignment._id || aIdx}
+                                    style={{
+                                      background: 'rgba(255,255,255,0.03)',
+                                      border: '1px solid rgba(56, 189, 248, 0.2)',
+                                      borderRadius: '12px',
+                                      padding: '1rem 1.25rem',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                      gap: '0.85rem',
+                                    }}
+                                  >
+                                    <div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                        <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '1rem' }}>
+                                          {prov.name || 'Verified Freelancer'}
+                                        </div>
+                                        <span style={{
+                                          background: assignment.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : assignment.status === 'CONFIRMED' ? 'rgba(34, 197, 94, 0.15)' : assignment.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                          color: assignment.paymentStatus === 'PAID' ? '#22c55e' : assignment.status === 'CONFIRMED' ? '#22c55e' : assignment.status === 'IN_PROGRESS' ? '#38bdf8' : '#f59e0b',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 800,
+                                          padding: '0.15rem 0.5rem',
+                                          borderRadius: '6px',
+                                        }}>
+                                          {assignment.paymentStatus === 'PAID'
+                                            ? '✅ PAID ONLINE'
+                                            : assignment.status === 'CONFIRMED'
+                                            ? '💵 CASH AFTER WORK'
+                                            : assignment.status === 'IN_PROGRESS'
+                                            ? '🛠️ IN PROGRESS'
+                                            : assignment.status === 'COMPLETED'
+                                            ? '🏁 COMPLETED'
+                                            : '⚡ QUOTE RECEIVED'}
+                                        </span>
+                                      </div>
+                                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                                        Claimed: <strong style={{ color: '#38bdf8' }}>{assignment.unitsClaimed} {b.unitType || 'Households'}</strong> @ ₹{assignment.quotedPricePerUnit}/unit · Contact: {prov.phone || 'Use chat'}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                                      <div style={{ textAlign: 'right', marginRight: '0.5rem' }}>
+                                        <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#38bdf8' }}>
+                                          ₹{assignment.totalAmount}
+                                        </div>
+                                      </div>
+
+                                      {/* Action Buttons */}
+                                      {assignment.status === 'ACCEPTED' && assignment.paymentStatus !== 'PAID' && (
+                                        <>
+                                          <button
+                                            onClick={() => handleRazorpayPayment(b, assignment._id)}
+                                            style={{
+                                              background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                              border: 'none',
+                                              color: '#ffffff',
+                                              padding: '0.5rem 0.85rem',
+                                              borderRadius: '8px',
+                                              fontSize: '0.78rem',
+                                              fontWeight: 800,
+                                              cursor: 'pointer',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '0.35rem',
+                                            }}
+                                          >
+                                            <CreditCard size={14} /> Pay ₹{assignment.totalAmount} (Online)
+                                          </button>
+
+                                          <button
+                                            onClick={() => handleAcceptCashPayment(b._id, assignment._id)}
+                                            style={{
+                                              background: 'rgba(34, 197, 94, 0.15)',
+                                              border: '1px solid rgba(34, 197, 94, 0.4)',
+                                              color: '#4ade80',
+                                              padding: '0.5rem 0.85rem',
+                                              borderRadius: '8px',
+                                              fontSize: '0.78rem',
+                                              fontWeight: 800,
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            💵 Pay Cash
+                                          </button>
+
+                                          <button
+                                            onClick={() => handleDeclineAssignment(b._id, assignment._id)}
+                                            style={{
+                                              background: 'rgba(239, 68, 68, 0.12)',
+                                              border: '1px solid rgba(239, 68, 68, 0.35)',
+                                              color: '#ef4444',
+                                              padding: '0.5rem 0.85rem',
+                                              borderRadius: '8px',
+                                              fontSize: '0.78rem',
+                                              fontWeight: 800,
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            ❌ Decline
+                                          </button>
+                                        </>
+                                      )}
+
+                                      <button
+                                        onClick={() =>
+                                          setActiveChatBooking({
+                                            ...b,
+                                            provider: prov,
+                                            serviceTitle: `${b.serviceTitle} (${assignment.unitsClaimed} Units)`,
+                                          })
+                                        }
+                                        style={{
+                                          background: 'rgba(56, 189, 248, 0.15)',
+                                          border: '1px solid rgba(56, 189, 248, 0.35)',
+                                          color: '#38bdf8',
+                                          padding: '0.5rem 0.85rem',
+                                          borderRadius: '8px',
+                                          fontSize: '0.78rem',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.35rem',
+                                        }}
+                                      >
+                                        <MessageSquare size={14} /> Chat
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {b.remainingUnits > 0 && (
+                            <div style={{ marginTop: '0.85rem', padding: '0.65rem 1rem', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '10px', fontSize: '0.8rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <AlertCircle size={15} />
+                              <span>{b.remainingUnits} more {b.unitType || 'households'} are available for local experts to claim.</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // ==========================================
+                  // SINGLE BOOKING CARD RENDERING
+                  // ==========================================
+                  return (
+                    <div key={b._id} style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '1.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff', margin: 0 }}>{b.serviceTitle}</h3>
+                            <span style={{
+                              background: b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.15)' : b.status === 'ACCEPTED' ? 'rgba(245, 158, 11, 0.15)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                              color: b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? '#22c55e' : b.status === 'ACCEPTED' ? '#f59e0b' : b.status === 'IN_PROGRESS' ? '#38bdf8' : '#94a3b8',
+                              border: `1px solid ${b.status === 'CONFIRMED' || b.paymentStatus === 'PAID' ? 'rgba(34, 197, 94, 0.3)' : b.status === 'ACCEPTED' ? 'rgba(245, 158, 11, 0.3)' : b.status === 'IN_PROGRESS' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(148, 163, 184, 0.3)'}`,
+                              padding: '0.2rem 0.6rem',
+                              borderRadius: '12px',
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                            }}>
+                              {b.status === 'PENDING'
+                                ? '⏳ PENDING (Awaiting Freelancer Quote)'
+                                : b.status === 'ACCEPTED'
+                                ? `⚡ QUOTE RECEIVED: ₹${b.totalAmount} (Awaiting Your Choice)`
+                                : b.status === 'CONFIRMED' || b.paymentStatus === 'PAID'
+                                ? `🎉 BOOKING CONFIRMED (${b.paymentStatus === 'PAID' ? 'PAID ONLINE' : 'CASH AFTER WORK'})`
+                                : '🛠️ IN PROGRESS'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                            Assigned Freelancer: <strong style={{ color: '#ffffff' }}>{b.provider?.name || 'Assigned Expert'}</strong> ({b.provider?.phone || 'Contact via message'})
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          {b.status === 'PENDING' ? (
+                            <div style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 600 }}>Custom Quote Pending</div>
+                          ) : (
+                            <>
+                              <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#38bdf8' }}>₹{b.totalAmount}</div>
+                              <div style={{ fontSize: '0.75rem', color: b.paymentStatus === 'PAID' ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
+                                {b.paymentStatus === 'PAID' ? '✅ Paid via Razorpay' : b.status === 'CONFIRMED' ? '💵 Cash After Work' : 'Quoted Price by Expert'}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Problem Description Box */}
+                      <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '0.85rem', margin: '0.85rem 0', fontSize: '0.85rem' }}>
+                        <div style={{ color: '#38bdf8', fontWeight: 700, marginBottom: '0.2rem' }}>Problem Description:</div>
+                        <div style={{ color: '#cbd5e1' }}>"{b.problemDescription || b.notes || 'No description provided'}"</div>
+                        {b.razorpayPaymentId && (
+                          <div style={{ color: '#22c55e', fontSize: '0.75rem', marginTop: '0.35rem', fontWeight: 600 }}>
+                            Payment ID: {b.razorpayPaymentId}
+                          </div>
                         )}
                       </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.5rem' }}>
+                        <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                          📅 Date: {new Date(b.scheduledDate).toLocaleDateString()} ({b.timeSlot}) · 📍 {b.address?.houseFlat}, {b.address?.streetArea}, {b.address?.city}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {/* CUSTOMER DECISION BUTTONS FOR QUOTED JOB */}
+                          {b.status === 'ACCEPTED' && (
+                            <>
+                              <button
+                                onClick={() => handleRazorpayPayment(b)}
+                                style={{
+                                  background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                  border: 'none',
+                                  color: '#ffffff',
+                                  padding: '0.55rem 0.95rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.82rem',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.4rem',
+                                  boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)',
+                                }}
+                              >
+                                <CreditCard size={15} /> Accept & Pay ₹{b.totalAmount} (Online)
+                              </button>
+
+                              <button
+                                onClick={() => handleAcceptCashPayment(b._id)}
+                                style={{
+                                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.3))',
+                                  border: '1px solid rgba(34, 197, 94, 0.5)',
+                                  color: '#4ade80',
+                                  padding: '0.55rem 0.95rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.82rem',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.4rem',
+                                }}
+                              >
+                                💵 Accept & Pay Cash
+                              </button>
+
+                              <button
+                                onClick={() => handleCancelBooking(b._id)}
+                                style={{
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  color: '#ef4444',
+                                  padding: '0.55rem 0.85rem',
+                                  borderRadius: '10px',
+                                  fontSize: '0.82rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                ❌ Decline Quote
+                              </button>
+                            </>
+                          )}
+
+                          {(b.status === 'ACCEPTED' || b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS') && (
+                            <button
+                              onClick={() => setActiveChatBooking(b)}
+                              style={{
+                                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(37, 99, 235, 0.3))',
+                                border: '1px solid rgba(56, 189, 248, 0.5)',
+                                color: '#38bdf8',
+                                padding: '0.45rem 0.85rem',
+                                borderRadius: '8px',
+                                fontSize: '0.8rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                              }}
+                            >
+                              <MessageSquare size={14} /> Chat with Expert
+                            </button>
+                          )}
+
+                          <button onClick={() => setSelectedBookingDetail(b)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                            View Details
+                          </button>
+
+                          {b.status === 'PENDING' && (
+                            <button onClick={() => handleCancelBooking(b._id)} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '0.45rem 0.85rem', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                              Cancel Request
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1039,6 +1503,7 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
         {activeTab === 'history' && (
           <section className="client-services-section">
             <h2 className="client-section-h2" style={{ marginBottom: '1.25rem' }}>Past Booking History</h2>
+
 
             {pastBookings.length === 0 ? (
               <div style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '3rem', textAlign: 'center' }}>
@@ -1387,6 +1852,368 @@ export default function ClientDashboard({ session }: ClientDashboardProps) {
                 }}
               >
                 {submittingBooking ? 'Sending Request to Local Experts...' : `Request ${selectedCategory.name} Expert (Quote Pending) ↗`}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* BULK / SOCIETY BOOKING MODAL */}
+      {isBulkModalOpen && (
+        <div className="modal-overlay">
+          <div
+            className="modal-box-modern"
+            style={{
+              maxWidth: '680px',
+              width: '94%',
+              borderRadius: '20px',
+              background: '#0b1329',
+              border: '1px solid rgba(99, 102, 241, 0.4)',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '1.25rem 1.75rem',
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(56, 189, 248, 0.1))',
+                borderBottom: '1px solid rgba(99, 102, 241, 0.25)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                <div
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Building size={24} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 900, color: '#ffffff', margin: 0 }}>
+                    Bulk / Society Service Request
+                  </h3>
+                  <span style={{ fontSize: '0.8rem', color: '#38bdf8' }}>
+                    Multi-service combination for 5 to 50+ households
+                  </span>
+                </div>
+              </div>
+              <button
+                className="close-btn-modern"
+                onClick={() => setIsBulkModalOpen(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: 'none',
+                  color: '#94a3b8',
+                  padding: '0.4rem',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkBookingSubmit} style={{ padding: '1.5rem 1.75rem', maxHeight: '82vh', overflowY: 'auto' }}>
+              {/* Info banner */}
+              <div
+                style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  borderRadius: '12px',
+                  padding: '0.85rem 1rem',
+                  marginBottom: '1.25rem',
+                  fontSize: '0.82rem',
+                  color: '#cbd5e1',
+                  lineHeight: 1.45,
+                }}
+              >
+                💡 <strong style={{ color: '#38bdf8' }}>How Bulk Booking Works:</strong> You can select any combination of services (e.g. Plumbing + Electrical) and the number of households. Local freelancers can claim the whole request or partial units (e.g. 7 of 10), and you can confirm and pay quotes independently!
+              </div>
+
+              {/* STEP 1: Select Multi-Service Combination */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1.1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Layers size={16} className="text-sky-400" />
+                    <span>1. Select Required Services (Multi-Select) *</span>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 700 }}>
+                    {bulkSelectedServices.length} Selected
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.6rem' }}>
+                  {SERVICE_CATEGORIES.map((cat) => {
+                    const isSelected = bulkSelectedServices.includes(cat.id);
+                    return (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        onClick={() => handleToggleBulkService(cat.id)}
+                        style={{
+                          background: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${isSelected ? '#6366f1' : 'rgba(255,255,255,0.08)'}`,
+                          color: isSelected ? '#ffffff' : '#94a3b8',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '10px',
+                          fontSize: '0.82rem',
+                          fontWeight: isSelected ? 800 : 500,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          textAlign: 'left',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {isSelected ? <CheckSquare size={16} color="#6366f1" /> : <Square size={16} color="#475569" />}
+                        <span>{cat.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* STEP 2: Number of Households / Units */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1.1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Boxes size={16} className="text-sky-400" />
+                  <span>2. Total Households / Units Count *</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', background: '#030712', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '0.35rem 0.6rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setBulkUnits(Math.max(2, bulkUnits - 1))}
+                      style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#38bdf8', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <input
+                      type="number"
+                      min={2}
+                      max={200}
+                      value={bulkUnits}
+                      onChange={(e) => setBulkUnits(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      style={{ width: '65px', textAlign: 'center', background: 'transparent', border: 'none', color: '#ffffff', fontWeight: 900, fontSize: '1.15rem', outline: 'none' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBulkUnits(bulkUnits + 1)}
+                      style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#38bdf8', width: '32px', height: '32px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {[5, 10, 15, 20, 30, 50].map((preset) => (
+                      <button
+                        type="button"
+                        key={preset}
+                        onClick={() => setBulkUnits(preset)}
+                        style={{
+                          background: bulkUnits === preset ? '#6366f1' : 'rgba(255,255,255,0.04)',
+                          border: `1px solid ${bulkUnits === preset ? '#6366f1' : 'rgba(255,255,255,0.1)'}`,
+                          color: bulkUnits === preset ? '#ffffff' : '#cbd5e1',
+                          padding: '0.4rem 0.8rem',
+                          borderRadius: '8px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {preset} Households
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* STEP 3: Problem Description & Scope of Work */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1.1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <FileText size={16} className="text-sky-400" />
+                  <span>3. Describe the Problem & Specific Units *</span>
+                </div>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Need plumbing check and electrical socket replacements across 10 flats in Block B (Flats 101 to 110)..."
+                  value={bulkProblemDescription}
+                  onChange={(e) => setBulkProblemDescription(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    background: '#030712',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    borderRadius: '10px',
+                    padding: '0.75rem',
+                    color: '#ffffff',
+                    outline: 'none',
+                    fontSize: '0.88rem',
+                    resize: 'none',
+                  }}
+                />
+              </div>
+
+              {/* STEP 4: Society / Address & Contact */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1.1rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <MapPin size={16} className="text-sky-400" />
+                  <span>4. Society / Apartment Complex Location</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', marginBottom: '0.85rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Society / Colony Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Palm Meadows Housing Society"
+                      value={bulkAddress.houseFlat}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, houseFlat: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Area / Road / Landmark *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Near Bailey Road, Block A-D"
+                      value={bulkAddress.streetArea}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, streetArea: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>City *</label>
+                    <input
+                      type="text"
+                      value={bulkAddress.city}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, city: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.55rem 0.75rem', color: '#ffffff', fontSize: '0.82rem', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>State *</label>
+                    <input
+                      type="text"
+                      value={bulkAddress.state}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, state: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.55rem 0.75rem', color: '#ffffff', fontSize: '0.82rem', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Pincode *</label>
+                    <input
+                      type="text"
+                      value={bulkAddress.pincode}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, pincode: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.55rem 0.75rem', color: '#ffffff', fontSize: '0.82rem', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Contact Person Name *</label>
+                    <input
+                      type="text"
+                      value={bulkAddress.fullName}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, fullName: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Phone Number *</label>
+                    <input
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      value={bulkAddress.phone}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, phone: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* STEP 5: Scheduled Date & Slot */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '1.1rem', marginBottom: '1.25rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ffffff', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Calendar size={16} className="text-sky-400" />
+                  <span>5. Scheduled Date & Time Slot</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Date *</label>
+                    <input
+                      type="date"
+                      value={bulkAddress.scheduledDate}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, scheduledDate: e.target.value })}
+                      required
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 600, display: 'block', marginBottom: '0.3rem' }}>Time Slot *</label>
+                    <select
+                      value={bulkAddress.timeSlot}
+                      onChange={(e) => setBulkAddress({ ...bulkAddress, timeSlot: e.target.value })}
+                      style={{ width: '100%', background: '#030712', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '0.6rem 0.85rem', color: '#ffffff', fontSize: '0.85rem', outline: 'none' }}
+                    >
+                      <option value="09:00 AM - 12:00 PM">09:00 AM - 12:00 PM (Morning)</option>
+                      <option value="12:00 PM - 03:00 PM">12:00 PM - 03:00 PM (Afternoon)</option>
+                      <option value="03:00 PM - 06:00 PM">03:00 PM - 06:00 PM (Evening)</option>
+                      <option value="Flexible All Day">Flexible All Day</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit CTA */}
+              <button
+                type="submit"
+                disabled={submittingBulk}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '1rem',
+                  borderRadius: '14px',
+                  fontSize: '1rem',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  boxShadow: '0 6px 25px rgba(99, 102, 241, 0.45)',
+                  opacity: submittingBulk ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                {submittingBulk ? 'Broadcasting Bulk Request...' : `Broadcast Request for ${bulkUnits} Households (${bulkSelectedServices.length} Services) ↗`}
               </button>
             </form>
           </div>
