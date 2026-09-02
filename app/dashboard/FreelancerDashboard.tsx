@@ -446,17 +446,15 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
         .toUpperCase()
     : 'FL';
 
-  const currentUserId = session?.user?.id || (session?.user as any)?._id;
+  const currentUserId = (session?.user?.id || (session?.user as any)?._id || '').toString().trim();
 
   const isMyAssignment = (a: any) => {
-    const provId =
-      a.provider?._id?.toString() ||
-      a.provider?.toString() ||
-      (typeof a.provider === 'object' ? String(a.provider._id || '') : String(a.provider || ''));
+    if (!a || !a.provider) return false;
+    const provId = (a.provider?._id ? a.provider._id.toString() : a.provider?.toString() || '').trim();
     return (
-      provId === currentUserId ||
-      (session?.user?.id && provId === session.user.id) ||
-      ((session?.user as any)?._id && provId === (session?.user as any)._id)
+      (currentUserId && provId === currentUserId) ||
+      (session?.user?.id && provId === session.user.id.toString().trim()) ||
+      ((session?.user as any)?._id && provId === (session?.user as any)._id.toString().trim())
     );
   };
 
@@ -1430,33 +1428,47 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: '1rem' }}>
-                  {completedJobs.map((job) => (
-                    <div key={job._id} style={{ background: 'rgba(13, 22, 44, 0.7)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '14px', padding: '1.25rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                        <div>
-                          <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '1.05rem' }}>{job.serviceTitle}</div>
-                          <div style={{ fontSize: '0.83rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                            Customer: <strong style={{ color: '#ffffff' }}>{job.client?.name || 'Customer'}</strong> ({job.address?.phone || 'No phone'}) · Date: {new Date(job.scheduledDate).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <span style={{
-                          background: job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(34, 197, 94, 0.15)',
-                          color: job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? '#38bdf8' : '#22c55e',
-                          border: `1px solid ${job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
-                          padding: '0.25rem 0.65rem',
-                          borderRadius: '10px',
-                          fontSize: '0.78rem',
-                          fontWeight: 800
-                        }}>
-                          ₹{job.totalAmount} {job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY' ? '(Paid via Razorpay)' : '(Cash Collected)'}
-                        </span>
-                      </div>
+                  {completedJobs.map((job) => {
+                    const myA = job.isBulk ? (job.assignments || []).find(isMyAssignment) : null;
+                    const finalAmount = myA ? myA.totalAmount : job.totalAmount;
+                    const isPaid = myA
+                      ? myA.paymentStatus === 'PAID' || myA.paymentMethod === 'RAZORPAY'
+                      : job.paymentStatus === 'PAID' || job.paymentMethod === 'RAZORPAY';
 
-                      {job.problemDescription && (
-                        <div style={{ fontSize: '0.8rem', color: '#cbd5e1', fontStyle: 'italic', marginBottom: '0.75rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
-                          Problem: "{job.problemDescription}"
+                    return (
+                      <div key={job._id} style={{ background: 'rgba(13, 22, 44, 0.7)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '14px', padding: '1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              {job.isBulk && (
+                                <span style={{ background: 'linear-gradient(135deg, #6366f1, #3b82f6)', color: '#ffffff', fontSize: '0.7rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                                  🏢 BULK ({myA?.unitsClaimed || 1} units)
+                                </span>
+                              )}
+                              <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '1.05rem' }}>{job.serviceTitle}</div>
+                            </div>
+                            <div style={{ fontSize: '0.83rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                              Customer: <strong style={{ color: '#ffffff' }}>{job.client?.name || 'Customer'}</strong> ({job.address?.phone || 'No phone'}) · Date: {new Date(job.scheduledDate).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <span style={{
+                            background: isPaid ? 'rgba(56, 189, 248, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                            color: isPaid ? '#38bdf8' : '#22c55e',
+                            border: `1px solid ${isPaid ? 'rgba(56, 189, 248, 0.3)' : 'rgba(34, 197, 94, 0.3)'}`,
+                            padding: '0.25rem 0.65rem',
+                            borderRadius: '10px',
+                            fontSize: '0.78rem',
+                            fontWeight: 800
+                          }}>
+                            ₹{finalAmount} {isPaid ? '(Paid via Razorpay)' : '(Cash Collected)'}
+                          </span>
                         </div>
-                      )}
+
+                        {job.problemDescription && (
+                          <div style={{ fontSize: '0.8rem', color: '#cbd5e1', fontStyle: 'italic', marginBottom: '0.75rem', background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', borderRadius: '8px' }}>
+                            Problem: "{job.problemDescription}"
+                          </div>
+                        )}
 
                       {/* RATINGS & REVIEWS AREA */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
@@ -1526,8 +1538,9 @@ export default function FreelancerDashboard({ session }: FreelancerDashboardProp
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
+              </div>
               )}
             </div>
           </div>

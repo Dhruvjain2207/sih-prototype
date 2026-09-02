@@ -23,10 +23,30 @@ export async function GET() {
       dbUser = await User.findById(session.user.id);
     }
 
-    const userId = dbUser?._id || session.user.id;
+    const rawUserId = dbUser?._id || session.user.id;
     const userRole = session.user.role || dbUser?.role || "client";
 
-    let bookings;
+    // Build comprehensive query IDs list (both ObjectId and String versions)
+    const userQueryIds: any[] = [];
+    if (rawUserId) {
+      userQueryIds.push(rawUserId);
+      userQueryIds.push(rawUserId.toString());
+      if (mongoose.Types.ObjectId.isValid(rawUserId.toString())) {
+        userQueryIds.push(new mongoose.Types.ObjectId(rawUserId.toString()));
+      }
+    }
+    if (session.user.id) {
+      userQueryIds.push(session.user.id);
+      if (mongoose.Types.ObjectId.isValid(session.user.id)) {
+        userQueryIds.push(new mongoose.Types.ObjectId(session.user.id));
+      }
+    }
+    if (dbUser?._id) {
+      userQueryIds.push(dbUser._id);
+      userQueryIds.push(dbUser._id.toString());
+    }
+
+    let bookings: any[];
     if (userRole === "freelancer") {
       // Get freelancer's skills array
       const userSkills: string[] = dbUser?.skills && dbUser.skills.length > 0 ? dbUser.skills : [];
@@ -63,11 +83,6 @@ export async function GET() {
       }
 
       // Query 2: Jobs claimed/accepted/completed by THIS specific freelancer
-      const userQueryIds = [userId];
-      if (session.user.id && session.user.id !== userId?.toString()) {
-        userQueryIds.push(session.user.id);
-      }
-
       const mySingleJobsQuery: any = {
         isBulk: { $ne: true },
         provider: { $in: userQueryIds },
@@ -82,20 +97,26 @@ export async function GET() {
       const [pendingSingle, pendingBulk, mySingleJobs, myBulkJobs] = await Promise.all([
         Booking.find(singlePendingQuery)
           .populate("client", "name email phone image")
+          .populate("provider", "name email phone image rating skills bio")
+          .populate("assignments.provider", "name email phone image rating skills bio")
           .populate("gig")
           .sort({ createdAt: -1 }),
         Booking.find(bulkPendingQuery)
           .populate("client", "name email phone image")
-          .populate("assignments.provider", "name email phone image rating skills")
+          .populate("provider", "name email phone image rating skills bio")
+          .populate("assignments.provider", "name email phone image rating skills bio")
           .populate("gig")
           .sort({ createdAt: -1 }),
         Booking.find(mySingleJobsQuery)
           .populate("client", "name email phone image")
+          .populate("provider", "name email phone image rating skills bio")
+          .populate("assignments.provider", "name email phone image rating skills bio")
           .populate("gig")
           .sort({ createdAt: -1 }),
         Booking.find(myBulkJobsQuery)
           .populate("client", "name email phone image")
-          .populate("assignments.provider", "name email phone image rating skills")
+          .populate("provider", "name email phone image rating skills bio")
+          .populate("assignments.provider", "name email phone image rating skills bio")
           .populate("gig")
           .sort({ createdAt: -1 }),
       ]);
@@ -112,8 +133,9 @@ export async function GET() {
       );
     } else {
       bookings = await Booking.find({
-        $or: [{ client: userId }, { client: session.user.id }],
+        client: { $in: userQueryIds },
       })
+        .populate("client", "name email phone image")
         .populate("provider", "name email phone image rating skills bio")
         .populate("assignments.provider", "name email phone image rating skills bio")
         .populate("gig")

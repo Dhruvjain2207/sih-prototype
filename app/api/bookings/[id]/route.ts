@@ -4,6 +4,15 @@ import connectToDatabase from "@/lib/mongodb";
 import { Booking, Notification, User } from "@/lib/models";
 import mongoose from "mongoose";
 
+// Helper function to check if a user matches an ID or user object
+function matchUserId(field: any, sessionUserId?: string, userMongoId?: string): boolean {
+  if (!field) return false;
+  const str = (field._id ? field._id.toString() : field.toString()).trim();
+  if (sessionUserId && str === sessionUserId.trim()) return true;
+  if (userMongoId && str === userMongoId.trim()) return true;
+  return false;
+}
+
 // GET /api/bookings/[id] - Get single booking details
 export async function GET(
   req: Request,
@@ -32,28 +41,26 @@ export async function GET(
     if (session.user.email) {
       dbUser = await User.findOne({ email: session.user.email.toLowerCase().trim() });
     }
+    if (!dbUser && session.user.id && mongoose.Types.ObjectId.isValid(session.user.id)) {
+      dbUser = await User.findById(session.user.id);
+    }
 
-    const sessionUserId = session.user.id;
+    const sessionUserId = session.user.id?.toString();
     const userMongoId = dbUser?._id?.toString();
 
-    const isClient =
-      booking.client?.toString() === sessionUserId ||
-      booking.client?._id?.toString() === sessionUserId ||
-      (userMongoId && (booking.client?.toString() === userMongoId || booking.client?._id?.toString() === userMongoId));
-
-    const isSingleProvider =
-      booking.provider?.toString() === sessionUserId ||
-      booking.provider?._id?.toString() === sessionUserId ||
-      (userMongoId && (booking.provider?.toString() === userMongoId || booking.provider?._id?.toString() === userMongoId));
-
+    const isClient = matchUserId(booking.client, sessionUserId, userMongoId);
+    const isSingleProvider = matchUserId(booking.provider, sessionUserId, userMongoId);
     const isBulkProvider =
       booking.isBulk &&
-      booking.assignments?.some((a: any) => {
-        const provId = a.provider?._id?.toString() || a.provider?.toString();
-        return provId === sessionUserId || (userMongoId && provId === userMongoId);
-      });
+      booking.assignments?.some((a: any) => matchUserId(a.provider, sessionUserId, userMongoId));
 
-    if (!isClient && !isSingleProvider && !isBulkProvider && session.user.role !== "admin" && session.user.role !== "freelancer") {
+    if (
+      !isClient &&
+      !isSingleProvider &&
+      !isBulkProvider &&
+      session.user.role !== "admin" &&
+      session.user.role !== "freelancer"
+    ) {
       return NextResponse.json({ error: "Forbidden: You are not authorized to view this booking." }, { status: 403 });
     }
 
@@ -96,24 +103,22 @@ export async function PATCH(
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
+    // Resolve DB User
     let dbUser = null;
     if (session.user.email) {
       dbUser = await User.findOne({ email: session.user.email.toLowerCase().trim() });
     }
+    if (!dbUser && session.user.id && mongoose.Types.ObjectId.isValid(session.user.id)) {
+      dbUser = await User.findById(session.user.id);
+    }
 
-    const sessionUserId = session.user.id;
+    const sessionUserId = session.user.id?.toString();
     const userMongoId = dbUser?._id?.toString();
     const currentUserId = userMongoId || sessionUserId;
+    const currentObjectId = dbUser?._id || (currentUserId && mongoose.Types.ObjectId.isValid(currentUserId) ? new mongoose.Types.ObjectId(currentUserId) : currentUserId);
 
-    const isClient =
-      booking.client?.toString() === sessionUserId ||
-      booking.client?._id?.toString() === sessionUserId ||
-      (userMongoId && (booking.client?.toString() === userMongoId || booking.client?._id?.toString() === userMongoId));
-
-    const isSingleProvider =
-      booking.provider?.toString() === sessionUserId ||
-      booking.provider?._id?.toString() === sessionUserId ||
-      (userMongoId && (booking.provider?.toString() === userMongoId || booking.provider?._id?.toString() === userMongoId));
+    const isClient = matchUserId(booking.client, sessionUserId, userMongoId);
+    const isSingleProvider = matchUserId(booking.provider, sessionUserId, userMongoId);
 
     // =========================================================================
     // BULK BOOKING ACTION 1: CLAIM UNITS (FULL OR PARTIAL)
@@ -158,7 +163,7 @@ export async function PATCH(
 
       // Create new assignment in assignments array
       const newAssignment: any = {
-        provider: currentUserId,
+        provider: currentObjectId,
         unitsClaimed: requestedUnits,
         quotedPricePerUnit: unitPrice,
         totalAmount: assignmentTotal,
@@ -174,7 +179,7 @@ export async function PATCH(
       }
       booking.assignments.push(newAssignment);
 
-      // Decrement remainingUnits atomically
+      // Decrement remainingUnits
       booking.remainingUnits = Math.max(0, currentRemaining - requestedUnits);
 
       // Update total calculated quote for the bulk booking
@@ -195,7 +200,7 @@ export async function PATCH(
       const providerName = dbUser?.name || session.user.name || "A service expert";
       await Notification.create({
         recipient: booking.client,
-        sender: currentUserId,
+        sender: currentObjectId,
         type: "BOOKING_ACCEPTED",
         title: "Bulk Units Claimed! 🎉",
         message: `${providerName} claimed ${requestedUnits} of ${booking.totalUnits} ${booking.unitType || "household"}s with a quote of ₹${assignmentTotal} (₹${unitPrice}/${booking.unitType || "unit"}). ${booking.remainingUnits > 0 ? `${booking.remainingUnits} units still awaiting experts.` : "All units are now claimed!"}`,
@@ -204,12 +209,13 @@ export async function PATCH(
 
       const updated = await Booking.findById(booking._id)
         .populate("client", "name email phone image")
-        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("provider", "name email phone image rating skills bio")
+        .populate("assignments.provider", "name email phone image rating skills bio")
         .populate("gig");
 
       return NextResponse.json({
         success: true,
-        message: `Successfully claimed ${requestedUnits} ${booking.unitType || "household"}s! Your quote has been submitted to the customer.`,
+        message: `Successfully claimed ${requestedUnits} ${booking.unitType || "household"}s! Your quote of ₹${assignmentTotal} has been submitted to the customer.`,
         booking: updated,
       });
     }
@@ -231,12 +237,14 @@ export async function PATCH(
       }
 
       targetAssignment.status = "CONFIRMED";
-      if (paymentMethod === "CASH_AFTER_WORK") {
+      if (paymentMethod === "CASH_AFTER_WORK" || !targetAssignment.paymentMethod) {
         targetAssignment.paymentMethod = "CASH_AFTER_WORK";
       }
 
-      // If all assignments are confirmed, mark booking CONFIRMED
-      const allConfirmed = booking.assignments?.every((a: any) => a.status === "CONFIRMED" || a.status === "IN_PROGRESS" || a.status === "COMPLETED");
+      // If all assignments are confirmed or beyond, update booking status
+      const allConfirmed = booking.assignments?.every((a: any) =>
+        a.status === "CONFIRMED" || a.status === "IN_PROGRESS" || a.status === "COMPLETED"
+      );
       if (allConfirmed && booking.remainingUnits === 0) {
         booking.status = "CONFIRMED";
       }
@@ -247,7 +255,7 @@ export async function PATCH(
       const clientName = dbUser?.name || session.user.name || "The customer";
       await Notification.create({
         recipient: targetAssignment.provider,
-        sender: sessionUserId,
+        sender: currentObjectId,
         type: "BOOKING_ACCEPTED",
         title: "Quote Confirmed! 🎉",
         message: `${clientName} confirmed your quote of ₹${targetAssignment.totalAmount} for ${targetAssignment.unitsClaimed} ${booking.unitType || "household"}s (${targetAssignment.paymentMethod === "CASH_AFTER_WORK" ? "Cash Payment After Work" : "Online Payment"}).`,
@@ -256,7 +264,8 @@ export async function PATCH(
 
       const updated = await Booking.findById(booking._id)
         .populate("client", "name email phone image")
-        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("provider", "name email phone image rating skills bio")
+        .populate("assignments.provider", "name email phone image rating skills bio")
         .populate("gig");
 
       return NextResponse.json({
@@ -314,7 +323,7 @@ export async function PATCH(
       if (declinedProvider) {
         await Notification.create({
           recipient: declinedProvider,
-          sender: sessionUserId,
+          sender: currentObjectId,
           type: "BOOKING_REJECTED",
           title: "Quote Declined",
           message: `${clientName} declined your quote for ${releasedUnits} ${booking.unitType || "household"}s. The units have been returned to the live marketplace for other experts.`,
@@ -324,7 +333,8 @@ export async function PATCH(
 
       const updated = await Booking.findById(booking._id)
         .populate("client", "name email phone image")
-        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("provider", "name email phone image rating skills bio")
+        .populate("assignments.provider", "name email phone image rating skills bio")
         .populate("gig");
 
       return NextResponse.json({
@@ -337,7 +347,7 @@ export async function PATCH(
     // =========================================================================
     // BULK BOOKING ACTION 3: UPDATE ASSIGNMENT STATUS (START / COMPLETE)
     // =========================================================================
-    if (booking.isBulk && assignmentId && (targetStatus === "IN_PROGRESS" || targetStatus === "COMPLETED")) {
+    if (booking.isBulk && (action === "UPDATE_ASSIGNMENT_STATUS" || assignmentId) && (targetStatus === "IN_PROGRESS" || targetStatus === "COMPLETED")) {
       const targetAssignment = booking.assignments?.find(
         (a: any) => a._id?.toString() === assignmentId || a._id === assignmentId
       );
@@ -346,19 +356,13 @@ export async function PATCH(
         return NextResponse.json({ error: "Assignment not found." }, { status: 404 });
       }
 
-      const assignedProvId =
-        targetAssignment.provider?._id?.toString() ||
-        targetAssignment.provider?.toString() ||
-        (typeof targetAssignment.provider === "object" ? String(targetAssignment.provider._id || "") : String(targetAssignment.provider || ""));
-
-      const isMatchingProvider =
-        assignedProvId === sessionUserId ||
-        (userMongoId && assignedProvId === userMongoId) ||
-        (session?.user?.id && assignedProvId === session.user.id);
+      const isMatchingProvider = matchUserId(targetAssignment.provider, sessionUserId, userMongoId);
 
       if (!isMatchingProvider && !isClient) {
         return NextResponse.json({ error: "Only the assigned provider can update this assignment." }, { status: 403 });
       }
+
+      const providerName = dbUser?.name || session.user.name || "Provider";
 
       if (targetStatus === "IN_PROGRESS") {
         targetAssignment.status = "IN_PROGRESS";
@@ -369,10 +373,10 @@ export async function PATCH(
 
         await Notification.create({
           recipient: booking.client,
-          sender: currentUserId,
+          sender: currentObjectId,
           type: "SERVICE_STARTED",
           title: "Service Started 🛠️",
-          message: `Provider started work on their ${targetAssignment.unitsClaimed} assigned ${booking.unitType || "household"}s.`,
+          message: `${providerName} started work on their ${targetAssignment.unitsClaimed} assigned ${booking.unitType || "household"}s.`,
           booking: booking._id,
         });
       } else if (targetStatus === "COMPLETED") {
@@ -390,17 +394,18 @@ export async function PATCH(
 
         await Notification.create({
           recipient: booking.client,
-          sender: currentUserId,
+          sender: currentObjectId,
           type: "SERVICE_COMPLETED",
           title: "Service Completed! ✅",
-          message: `Provider completed work for ${targetAssignment.unitsClaimed} ${booking.unitType || "household"}s (Amount: ₹${targetAssignment.totalAmount}).`,
+          message: `${providerName} completed work for ${targetAssignment.unitsClaimed} ${booking.unitType || "household"}s (Amount: ₹${targetAssignment.totalAmount}).`,
           booking: booking._id,
         });
       }
 
       const updated = await Booking.findById(booking._id)
         .populate("client", "name email phone image")
-        .populate("assignments.provider", "name email phone image rating skills")
+        .populate("provider", "name email phone image rating skills bio")
+        .populate("assignments.provider", "name email phone image rating skills bio")
         .populate("gig");
 
       return NextResponse.json({
@@ -413,7 +418,7 @@ export async function PATCH(
     // =========================================================================
     // SINGLE BOOKING / GENERAL TRANSITIONS
     // =========================================================================
-    const currentStatus = booking.status.toUpperCase();
+    const currentStatus = (booking.status || "").toUpperCase();
     const requestedStatus = (targetStatus || "").toUpperCase();
 
     if (requestedStatus === "CANCELLED") {
@@ -430,7 +435,7 @@ export async function PATCH(
       if (recipientId) {
         await Notification.create({
           recipient: recipientId,
-          sender: sessionUserId,
+          sender: currentObjectId,
           type: "BOOKING_CANCELLED",
           title: "Booking Cancelled",
           message: `Booking for "${booking.serviceTitle}" was cancelled by the ${isClient ? "customer" : "provider"}.`,
@@ -454,7 +459,7 @@ export async function PATCH(
       }
 
       booking.status = "ACCEPTED";
-      booking.provider = currentUserId;
+      booking.provider = currentObjectId;
       booking.totalAmount = finalQuote;
       booking.quotedPrice = finalQuote;
       booking.acceptedAt = new Date();
@@ -462,7 +467,7 @@ export async function PATCH(
       const providerName = dbUser?.name || session.user.name || "A service expert";
       await Notification.create({
         recipient: booking.client,
-        sender: currentUserId,
+        sender: currentObjectId,
         type: "BOOKING_ACCEPTED",
         title: "Quote Received & Accepted! 🎉",
         message: `Your booking for "${booking.serviceTitle}" was accepted by ${providerName} with a quoted price of ₹${finalQuote}. Please accept or decline the quote.`,
@@ -477,7 +482,7 @@ export async function PATCH(
         );
       }
       booking.status = "CONFIRMED";
-      if (paymentMethod === "CASH_AFTER_WORK") {
+      if (paymentMethod === "CASH_AFTER_WORK" || !booking.paymentMethod) {
         booking.paymentMethod = "CASH_AFTER_WORK";
       }
 
@@ -485,7 +490,7 @@ export async function PATCH(
       if (booking.provider) {
         await Notification.create({
           recipient: booking.provider,
-          sender: sessionUserId,
+          sender: currentObjectId,
           type: "BOOKING_ACCEPTED",
           title: "Booking Confirmed! 🎉",
           message: `${clientName} accepted your quote of ₹${booking.totalAmount} (${booking.paymentMethod === "CASH_AFTER_WORK" ? "Cash After Work" : "Online"}). Booking confirmed!`,
@@ -494,7 +499,7 @@ export async function PATCH(
       }
 
     } else if (requestedStatus === "REJECTED") {
-      if (!isSingleProvider && !booking.isBulk) {
+      if (!isSingleProvider && !booking.isBulk && currentStatus !== "PENDING") {
         return NextResponse.json({ error: "Only the assigned service provider can reject this booking." }, { status: 403 });
       }
       if (currentStatus !== "PENDING" && currentStatus !== "PARTIALLY_ACCEPTED") {
@@ -506,7 +511,7 @@ export async function PATCH(
 
       await Notification.create({
         recipient: booking.client,
-        sender: sessionUserId,
+        sender: currentObjectId,
         type: "BOOKING_REJECTED",
         title: "Booking Request Declined",
         message: `Your booking for "${booking.serviceTitle}" was declined. Reason: ${booking.rejectionReason}`,
@@ -523,12 +528,13 @@ export async function PATCH(
       booking.status = "IN_PROGRESS";
       booking.startedAt = new Date();
 
+      const providerName = dbUser?.name || session.user.name || "The provider";
       await Notification.create({
         recipient: booking.client,
-        sender: sessionUserId,
+        sender: currentObjectId,
         type: "SERVICE_STARTED",
         title: "Service Started 🛠️",
-        message: `The provider has started work on "${booking.serviceTitle}".`,
+        message: `${providerName} has started work on "${booking.serviceTitle}".`,
         booking: booking._id,
       });
 
@@ -542,12 +548,13 @@ export async function PATCH(
       booking.status = "COMPLETED";
       booking.completedAt = new Date();
 
+      const providerName = dbUser?.name || session.user.name || "The provider";
       await Notification.create({
         recipient: booking.client,
-        sender: sessionUserId,
+        sender: currentObjectId,
         type: "SERVICE_COMPLETED",
         title: "Service Completed! ✅",
-        message: `Work on "${booking.serviceTitle}" is complete! Please pay ₹${booking.totalAmount} cash directly to the provider.`,
+        message: `Work on "${booking.serviceTitle}" is complete! ${booking.paymentStatus === "PAID" ? "Payment was already completed online." : `Please pay ₹${booking.totalAmount} cash directly to ${providerName}.`}`,
         booking: booking._id,
       });
 
@@ -573,4 +580,5 @@ export async function PATCH(
     return NextResponse.json({ error: error.message || "Failed to update booking status" }, { status: 500 });
   }
 }
+
 

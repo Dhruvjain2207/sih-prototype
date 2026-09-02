@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { bookingId, rating, comment } = body;
+    const { bookingId, rating, comment, revieweeId: explicitReviewee } = body;
 
     if (!bookingId) {
       return NextResponse.json({ error: "Booking ID is required." }, { status: 400 });
@@ -46,33 +46,64 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Booking not found." }, { status: 404 });
     }
 
-    if (booking.status.toUpperCase() !== "COMPLETED") {
-      return NextResponse.json(
-        { error: "Reviews can only be submitted after the service is marked as COMPLETED." },
-        { status: 400 }
-      );
-    }
-
-    // Determine reviewer & reviewee
-    const clientMongoId = booking.client?._id
+    const clientMongoId = (booking.client?._id
       ? booking.client._id.toString()
-      : booking.client?.toString();
-    const providerMongoId = booking.provider?._id
-      ? booking.provider._id.toString()
-      : booking.provider?.toString();
+      : booking.client?.toString() || "").trim();
 
-    let reviewerId: string;
-    let revieweeId: string;
+    const providerMongoId = (booking.provider?._id
+      ? booking.provider._id.toString()
+      : booking.provider?.toString() || "").trim();
+
+    // Check if user is participant and if completion status is met
+    let reviewerId: string = sessionUserId;
+    let revieweeId: string = "";
     let reviewType: "client_to_freelancer" | "freelancer_to_client";
 
-    if (sessionUserId === clientMongoId) {
-      reviewerId = clientMongoId;
-      revieweeId = providerMongoId;
+    const isClient = sessionUserId === clientMongoId;
+    const isSingleProvider = sessionUserId === providerMongoId;
+    const myBulkAssignment = booking.isBulk
+      ? (booking.assignments || []).find((a: any) => {
+          const pId = (a.provider?._id ? a.provider._id.toString() : a.provider?.toString() || "").trim();
+          return pId === sessionUserId;
+        })
+      : null;
+
+    if (isClient) {
       reviewType = "client_to_freelancer";
-    } else if (sessionUserId === providerMongoId) {
-      reviewerId = providerMongoId;
-      revieweeId = clientMongoId;
+      if (explicitReviewee) {
+        revieweeId = explicitReviewee;
+      } else if (providerMongoId) {
+        revieweeId = providerMongoId;
+      } else if (booking.isBulk && booking.assignments && booking.assignments.length > 0) {
+        const prov = booking.assignments[0].provider;
+        revieweeId = (prov?._id ? prov._id.toString() : prov?.toString() || "").trim();
+      }
+
+      // Check completed status
+      const hasCompletedWork =
+        booking.status.toUpperCase() === "COMPLETED" ||
+        (booking.isBulk && (booking.assignments || []).some((a: any) => a.status === "COMPLETED"));
+
+      if (!hasCompletedWork) {
+        return NextResponse.json(
+          { error: "Reviews can only be submitted after work is marked as COMPLETED." },
+          { status: 400 }
+        );
+      }
+    } else if (isSingleProvider || myBulkAssignment) {
       reviewType = "freelancer_to_client";
+      revieweeId = clientMongoId;
+
+      const isCompleted = isSingleProvider
+        ? booking.status.toUpperCase() === "COMPLETED"
+        : myBulkAssignment?.status === "COMPLETED" || booking.status.toUpperCase() === "COMPLETED";
+
+      if (!isCompleted) {
+        return NextResponse.json(
+          { error: "Reviews can only be submitted after your service is marked as COMPLETED." },
+          { status: 400 }
+        );
+      }
     } else {
       return NextResponse.json(
         { error: "Forbidden: You were not part of this booking." },
@@ -88,7 +119,11 @@ export async function POST(req: Request) {
     }
 
     // Check if review already submitted by this reviewer for this booking
-    const existingReview = await Review.findOne({ booking: bookingId, reviewer: reviewerId });
+    const existingReview = await Review.findOne({
+      booking: bookingId,
+      reviewer: reviewerId,
+      reviewee: revieweeId,
+    });
     if (existingReview) {
       return NextResponse.json(
         { error: "You have already submitted a review for this completed booking." },
